@@ -10,13 +10,15 @@ output:
 bibliography: kinship.bib
 ---
 
-We will use matrix kinship models in a time-variant framework [@caswell_formal_2021] to compute the expected number of grandparents and grandchildren in a range of countries and the realted kin dependencies. 
+We will use matrix kinship models in a time-variant framework [@caswell_formal_2021] to compute the expected number of grandparents and grandchildren in a range of countries and the related kin dependencies. 
+
+The code runs in R, preferably in RStudio.
 
 <img src="DemoKin-Logo.png" align="right" width="200" />
 
 # 1. Installation
 
-Install the [development version](https://github.com/IvanWilli/DemoKin) of DemoKin from GitHub (could take ~1 minute). We made changes to the `DemoKin` package ahead of this workshop If you had already installed the package, please uninstall it and and install it again.
+Install the [development version](https://github.com/IvanWilli/DemoKin) of DemoKin from GitHub (could take ~1 minute). We made changes to the `DemoKin` package recently. If you had already installed the package, please uninstall it and and install it again.
 
 ```{r, eval=FALSE}
 # remove.packages("DemoKin")
@@ -120,12 +122,12 @@ get_UNWPP_inputs <- function(countries, my_startyr, my_endyr, variant = "Median"
 
 # 2. Number of kin
 
-Let's get the numbers of China and Germany:
+Let's get the numbers of China, Guatemala, and Germany:
 
 ```{r}
 
 # pick countries
-countries <- c("China", "Germany")
+countries <- c("China", "Guatemala", "Germany")
 
 # Year range
 
@@ -175,7 +177,9 @@ period_kin_temp <-
 period_kin <- 
   period_kin_temp %>% 
   select(Location, kin, year, age_focal, count_living) %>% 
-  mutate(count_living = count_living*4)
+  mutate(
+    count_living = count_living*4
+    , kin = ifelse(kin == "gm", "grandparents", "grandchildren"))
 
 ```
 
@@ -185,7 +189,6 @@ Now we can visualise the expected number of grandchildren and grandparents for a
 
 ```{r}
 period_kin %>% 
-  rename_kin()  %>% 
   ggplot(aes(x = age_focal, y = count_living, color = Location)) +
   geom_line(size = 2) + 
   scale_x_continuous("Age of Focal (average member of the population)") +
@@ -199,10 +202,7 @@ As a table:
 
 ```{r}
 period_kin %>% 
-  mutate(
-    count_living = round(count_living, 2)
-    , kin = ifelse(kin == "gm", "grandparents", "grandchildren") 
-    ) %>% 
+  mutate(count_living = round(count_living, 2)) %>% 
   pivot_wider(names_from = kin, values_from = count_living) %>% 
   select(-year) %>% 
   kable()

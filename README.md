@@ -13,6 +13,8 @@ We will use matrix kinship models in a time-variant framework (Caswell
 and Song 2021) to compute the expected number of grandparents and
 grandchildren in a range of countries and the realted kin dependencies.
 
+The code runs in R, preferably in RStudio.
+
 <img src="DemoKin-Logo.png" align="right" width="200" />
 
 # 1\. Installation
@@ -123,11 +125,11 @@ get_UNWPP_inputs <- function(countries, my_startyr, my_endyr, variant = "Median"
 
 # 2\. Number of kin
 
-Let’s get the numbers of China and Germany:
+Let’s get the numbers of China, Guatemala, and Germany:
 
 ``` r
 # pick countries
-countries <- c("China", "Germany")
+countries <- c("China", "Guatemala", "Germany")
 
 # Year range
 
@@ -142,8 +144,8 @@ data <- get_UNWPP_inputs(
 ```
 
     ## [1] "Getting API ready..."
-    ## [1] "Getting mortality data for China, Germany"
-    ## [1] "Getting fertility data for China, Germany"
+    ## [1] "Getting mortality data for China, Guatemala, Germany"
+    ## [1] "Getting fertility data for China, Guatemala, Germany"
 
 Run kinship models for 2022 period:
 
@@ -185,6 +187,11 @@ period_kin_temp <-
 
     ## Assuming stable population before 1950.
 
+    ## [1] "Guatemala"
+
+    ## Stable assumption was made for calculating pi on each year because no input data.
+    ## Assuming stable population before 1950.
+
 The model is for female populations along matrilineal lines, but
 following Caswel (2022), we can use Keyfitz factors to multiply kin and
 obtain male and female kin accordingly. This is a good-enough
@@ -194,7 +201,9 @@ approximation:
 period_kin <- 
   period_kin_temp %>% 
   select(Location, kin, year, age_focal, count_living) %>% 
-  mutate(count_living = count_living*4)
+  mutate(
+    count_living = count_living*4
+    , kin = ifelse(kin == "gm", "grandparents", "grandchildren"))
 ```
 
 # 3\. Average number of granpdarent/grandchildren
@@ -206,7 +215,6 @@ grandchildren and 0.08 living grandparents. Visually:
 
 ``` r
 period_kin %>% 
-  rename_kin()  %>% 
   ggplot(aes(x = age_focal, y = count_living, color = Location)) +
   geom_line(size = 2) + 
   scale_x_continuous("Age of Focal (average member of the population)") +
@@ -222,219 +230,317 @@ As a table:
 
 ``` r
 period_kin %>% 
-  mutate(
-    count_living = round(count_living, 2)
-    , kin = ifelse(kin == "gm", "grandparents", "grandchildren") 
-    ) %>% 
+  mutate(count_living = round(count_living, 2)) %>% 
   pivot_wider(names_from = kin, values_from = count_living) %>% 
   select(-year) %>% 
   kable()
 ```
 
-| Location | age\_focal | grandchildren | grandparents |
-| :------- | ---------: | ------------: | -----------: |
-| China    |          0 |          0.00 |         3.78 |
-| China    |          1 |          0.00 |         3.76 |
-| China    |          2 |          0.00 |         3.74 |
-| China    |          3 |          0.00 |         3.71 |
-| China    |          4 |          0.00 |         3.69 |
-| China    |          5 |          0.00 |         3.66 |
-| China    |          6 |          0.00 |         3.63 |
-| China    |          7 |          0.00 |         3.61 |
-| China    |          8 |          0.00 |         3.57 |
-| China    |          9 |          0.00 |         3.53 |
-| China    |         10 |          0.00 |         3.48 |
-| China    |         11 |          0.00 |         3.43 |
-| China    |         12 |          0.00 |         3.38 |
-| China    |         13 |          0.00 |         3.33 |
-| China    |         14 |          0.00 |         3.28 |
-| China    |         15 |          0.00 |         3.24 |
-| China    |         16 |          0.00 |         3.18 |
-| China    |         17 |          0.00 |         3.11 |
-| China    |         18 |          0.00 |         3.03 |
-| China    |         19 |          0.00 |         2.94 |
-| China    |         20 |          0.00 |         2.85 |
-| China    |         21 |          0.00 |         2.78 |
-| China    |         22 |          0.00 |         2.68 |
-| China    |         23 |          0.00 |         2.59 |
-| China    |         24 |          0.00 |         2.50 |
-| China    |         25 |          0.00 |         2.41 |
-| China    |         26 |          0.00 |         2.31 |
-| China    |         27 |          0.00 |         2.18 |
-| China    |         28 |          0.00 |         2.09 |
-| China    |         29 |          0.00 |         1.99 |
-| China    |         30 |          0.00 |         1.89 |
-| China    |         31 |          0.00 |         1.70 |
-| China    |         32 |          0.00 |         1.54 |
-| China    |         33 |          0.00 |         1.41 |
-| China    |         34 |          0.00 |         1.29 |
-| China    |         35 |          0.00 |         1.17 |
-| China    |         36 |          0.00 |         1.05 |
-| China    |         37 |          0.00 |         0.93 |
-| China    |         38 |          0.00 |         0.81 |
-| China    |         39 |          0.01 |         0.70 |
-| China    |         40 |          0.01 |         0.58 |
-| China    |         41 |          0.02 |         0.48 |
-| China    |         42 |          0.03 |         0.39 |
-| China    |         43 |          0.05 |         0.32 |
-| China    |         44 |          0.08 |         0.27 |
-| China    |         45 |          0.13 |         0.22 |
-| China    |         46 |          0.19 |         0.18 |
-| China    |         47 |          0.27 |         0.15 |
-| China    |         48 |          0.39 |         0.12 |
-| China    |         49 |          0.53 |         0.10 |
-| China    |         50 |          0.72 |         0.08 |
-| China    |         51 |          0.91 |         0.06 |
-| China    |         52 |          1.12 |         0.05 |
-| China    |         53 |          1.33 |         0.04 |
-| China    |         54 |          1.57 |         0.03 |
-| China    |         55 |          1.83 |         0.02 |
-| China    |         56 |          2.07 |         0.01 |
-| China    |         57 |          2.29 |         0.01 |
-| China    |         58 |          2.48 |         0.01 |
-| China    |         59 |          2.65 |         0.00 |
-| China    |         60 |          2.80 |         0.00 |
-| China    |         61 |          2.93 |         0.00 |
-| China    |         62 |          3.05 |         0.00 |
-| China    |         63 |          3.17 |         0.00 |
-| China    |         64 |          3.27 |         0.00 |
-| China    |         65 |          3.38 |         0.00 |
-| China    |         66 |          3.49 |         0.00 |
-| China    |         67 |          3.63 |         0.00 |
-| China    |         68 |          3.80 |         0.00 |
-| China    |         69 |          4.00 |         0.00 |
-| China    |         70 |          4.24 |         0.00 |
-| China    |         71 |          4.50 |         0.00 |
-| China    |         72 |          4.79 |         0.00 |
-| China    |         73 |          5.10 |         0.00 |
-| China    |         74 |          5.45 |         0.00 |
-| China    |         75 |          5.79 |         0.00 |
-| China    |         76 |          6.16 |         0.00 |
-| China    |         77 |          6.47 |         0.00 |
-| China    |         78 |          6.78 |         0.00 |
-| China    |         79 |          7.04 |         0.00 |
-| China    |         80 |          7.25 |         0.00 |
-| China    |         81 |          7.40 |         0.00 |
-| China    |         82 |          7.55 |         0.00 |
-| China    |         83 |          7.69 |         0.00 |
-| China    |         84 |          7.85 |         0.00 |
-| China    |         85 |          8.03 |         0.00 |
-| China    |         86 |          8.23 |         0.00 |
-| China    |         87 |          8.44 |         0.00 |
-| China    |         88 |          8.64 |         0.00 |
-| China    |         89 |          8.83 |         0.00 |
-| China    |         90 |          8.99 |         0.00 |
-| China    |         91 |          9.15 |         0.00 |
-| China    |         92 |          9.29 |         0.00 |
-| China    |         93 |          9.45 |         0.00 |
-| China    |         94 |          9.61 |         0.00 |
-| China    |         95 |          9.80 |         0.00 |
-| China    |         96 |         10.02 |         0.00 |
-| China    |         97 |         10.26 |         0.00 |
-| China    |         98 |         10.53 |         0.00 |
-| China    |         99 |         10.81 |         0.00 |
-| China    |        100 |         11.10 |         0.00 |
-| Germany  |          0 |          0.00 |         3.78 |
-| Germany  |          1 |          0.00 |         3.76 |
-| Germany  |          2 |          0.00 |         3.74 |
-| Germany  |          3 |          0.00 |         3.72 |
-| Germany  |          4 |          0.00 |         3.69 |
-| Germany  |          5 |          0.00 |         3.67 |
-| Germany  |          6 |          0.00 |         3.64 |
-| Germany  |          7 |          0.00 |         3.61 |
-| Germany  |          8 |          0.00 |         3.58 |
-| Germany  |          9 |          0.00 |         3.55 |
-| Germany  |         10 |          0.00 |         3.51 |
-| Germany  |         11 |          0.00 |         3.48 |
-| Germany  |         12 |          0.00 |         3.44 |
-| Germany  |         13 |          0.00 |         3.39 |
-| Germany  |         14 |          0.00 |         3.35 |
-| Germany  |         15 |          0.00 |         3.30 |
-| Germany  |         16 |          0.00 |         3.25 |
-| Germany  |         17 |          0.00 |         3.20 |
-| Germany  |         18 |          0.00 |         3.14 |
-| Germany  |         19 |          0.00 |         3.08 |
-| Germany  |         20 |          0.00 |         3.02 |
-| Germany  |         21 |          0.00 |         2.94 |
-| Germany  |         22 |          0.00 |         2.85 |
-| Germany  |         23 |          0.00 |         2.76 |
-| Germany  |         24 |          0.00 |         2.67 |
-| Germany  |         25 |          0.00 |         2.58 |
-| Germany  |         26 |          0.00 |         2.47 |
-| Germany  |         27 |          0.00 |         2.37 |
-| Germany  |         28 |          0.00 |         2.27 |
-| Germany  |         29 |          0.00 |         2.17 |
-| Germany  |         30 |          0.00 |         2.07 |
-| Germany  |         31 |          0.00 |         1.98 |
-| Germany  |         32 |          0.00 |         1.85 |
-| Germany  |         33 |          0.00 |         1.75 |
-| Germany  |         34 |          0.00 |         1.62 |
-| Germany  |         35 |          0.00 |         1.51 |
-| Germany  |         36 |          0.00 |         1.39 |
-| Germany  |         37 |          0.00 |         1.28 |
-| Germany  |         38 |          0.00 |         1.18 |
-| Germany  |         39 |          0.00 |         1.07 |
-| Germany  |         40 |          0.01 |         0.96 |
-| Germany  |         41 |          0.01 |         0.86 |
-| Germany  |         42 |          0.01 |         0.75 |
-| Germany  |         43 |          0.02 |         0.66 |
-| Germany  |         44 |          0.03 |         0.57 |
-| Germany  |         45 |          0.04 |         0.49 |
-| Germany  |         46 |          0.06 |         0.41 |
-| Germany  |         47 |          0.09 |         0.35 |
-| Germany  |         48 |          0.12 |         0.29 |
-| Germany  |         49 |          0.16 |         0.25 |
-| Germany  |         50 |          0.20 |         0.20 |
-| Germany  |         51 |          0.26 |         0.16 |
-| Germany  |         52 |          0.33 |         0.12 |
-| Germany  |         53 |          0.40 |         0.09 |
-| Germany  |         54 |          0.49 |         0.06 |
-| Germany  |         55 |          0.60 |         0.05 |
-| Germany  |         56 |          0.73 |         0.03 |
-| Germany  |         57 |          0.88 |         0.02 |
-| Germany  |         58 |          1.04 |         0.01 |
-| Germany  |         59 |          1.20 |         0.01 |
-| Germany  |         60 |          1.37 |         0.01 |
-| Germany  |         61 |          1.53 |         0.00 |
-| Germany  |         62 |          1.68 |         0.00 |
-| Germany  |         63 |          1.80 |         0.00 |
-| Germany  |         64 |          1.91 |         0.00 |
-| Germany  |         65 |          2.01 |         0.00 |
-| Germany  |         66 |          2.11 |         0.00 |
-| Germany  |         67 |          2.17 |         0.00 |
-| Germany  |         68 |          2.23 |         0.00 |
-| Germany  |         69 |          2.30 |         0.00 |
-| Germany  |         70 |          2.34 |         0.00 |
-| Germany  |         71 |          2.39 |         0.00 |
-| Germany  |         72 |          2.43 |         0.00 |
-| Germany  |         73 |          2.45 |         0.00 |
-| Germany  |         74 |          2.47 |         0.00 |
-| Germany  |         75 |          2.49 |         0.00 |
-| Germany  |         76 |          2.51 |         0.00 |
-| Germany  |         77 |          2.52 |         0.00 |
-| Germany  |         78 |          2.56 |         0.00 |
-| Germany  |         79 |          2.62 |         0.00 |
-| Germany  |         80 |          2.70 |         0.00 |
-| Germany  |         81 |          2.79 |         0.00 |
-| Germany  |         82 |          2.87 |         0.00 |
-| Germany  |         83 |          2.94 |         0.00 |
-| Germany  |         84 |          3.00 |         0.00 |
-| Germany  |         85 |          3.06 |         0.00 |
-| Germany  |         86 |          3.12 |         0.00 |
-| Germany  |         87 |          3.19 |         0.00 |
-| Germany  |         88 |          3.25 |         0.00 |
-| Germany  |         89 |          3.26 |         0.00 |
-| Germany  |         90 |          3.24 |         0.00 |
-| Germany  |         91 |          3.19 |         0.00 |
-| Germany  |         92 |          3.16 |         0.00 |
-| Germany  |         93 |          3.15 |         0.00 |
-| Germany  |         94 |          3.14 |         0.00 |
-| Germany  |         95 |          3.14 |         0.00 |
-| Germany  |         96 |          3.13 |         0.00 |
-| Germany  |         97 |          3.14 |         0.00 |
-| Germany  |         98 |          3.17 |         0.00 |
-| Germany  |         99 |          3.18 |         0.00 |
-| Germany  |        100 |          3.18 |         0.00 |
+| Location  | age\_focal | grandchildren | grandparents |
+| :-------- | ---------: | ------------: | -----------: |
+| China     |          0 |          0.00 |         3.78 |
+| China     |          1 |          0.00 |         3.76 |
+| China     |          2 |          0.00 |         3.74 |
+| China     |          3 |          0.00 |         3.71 |
+| China     |          4 |          0.00 |         3.69 |
+| China     |          5 |          0.00 |         3.66 |
+| China     |          6 |          0.00 |         3.63 |
+| China     |          7 |          0.00 |         3.61 |
+| China     |          8 |          0.00 |         3.57 |
+| China     |          9 |          0.00 |         3.53 |
+| China     |         10 |          0.00 |         3.48 |
+| China     |         11 |          0.00 |         3.43 |
+| China     |         12 |          0.00 |         3.38 |
+| China     |         13 |          0.00 |         3.33 |
+| China     |         14 |          0.00 |         3.28 |
+| China     |         15 |          0.00 |         3.24 |
+| China     |         16 |          0.00 |         3.18 |
+| China     |         17 |          0.00 |         3.11 |
+| China     |         18 |          0.00 |         3.03 |
+| China     |         19 |          0.00 |         2.94 |
+| China     |         20 |          0.00 |         2.85 |
+| China     |         21 |          0.00 |         2.78 |
+| China     |         22 |          0.00 |         2.68 |
+| China     |         23 |          0.00 |         2.59 |
+| China     |         24 |          0.00 |         2.50 |
+| China     |         25 |          0.00 |         2.41 |
+| China     |         26 |          0.00 |         2.31 |
+| China     |         27 |          0.00 |         2.18 |
+| China     |         28 |          0.00 |         2.09 |
+| China     |         29 |          0.00 |         1.99 |
+| China     |         30 |          0.00 |         1.89 |
+| China     |         31 |          0.00 |         1.70 |
+| China     |         32 |          0.00 |         1.54 |
+| China     |         33 |          0.00 |         1.41 |
+| China     |         34 |          0.00 |         1.29 |
+| China     |         35 |          0.00 |         1.17 |
+| China     |         36 |          0.00 |         1.05 |
+| China     |         37 |          0.00 |         0.93 |
+| China     |         38 |          0.00 |         0.81 |
+| China     |         39 |          0.01 |         0.70 |
+| China     |         40 |          0.01 |         0.58 |
+| China     |         41 |          0.02 |         0.48 |
+| China     |         42 |          0.03 |         0.39 |
+| China     |         43 |          0.05 |         0.32 |
+| China     |         44 |          0.08 |         0.27 |
+| China     |         45 |          0.13 |         0.22 |
+| China     |         46 |          0.19 |         0.18 |
+| China     |         47 |          0.27 |         0.15 |
+| China     |         48 |          0.39 |         0.12 |
+| China     |         49 |          0.53 |         0.10 |
+| China     |         50 |          0.72 |         0.08 |
+| China     |         51 |          0.91 |         0.06 |
+| China     |         52 |          1.12 |         0.05 |
+| China     |         53 |          1.33 |         0.04 |
+| China     |         54 |          1.57 |         0.03 |
+| China     |         55 |          1.83 |         0.02 |
+| China     |         56 |          2.07 |         0.01 |
+| China     |         57 |          2.29 |         0.01 |
+| China     |         58 |          2.48 |         0.01 |
+| China     |         59 |          2.65 |         0.00 |
+| China     |         60 |          2.80 |         0.00 |
+| China     |         61 |          2.93 |         0.00 |
+| China     |         62 |          3.05 |         0.00 |
+| China     |         63 |          3.17 |         0.00 |
+| China     |         64 |          3.27 |         0.00 |
+| China     |         65 |          3.38 |         0.00 |
+| China     |         66 |          3.49 |         0.00 |
+| China     |         67 |          3.63 |         0.00 |
+| China     |         68 |          3.80 |         0.00 |
+| China     |         69 |          4.00 |         0.00 |
+| China     |         70 |          4.24 |         0.00 |
+| China     |         71 |          4.50 |         0.00 |
+| China     |         72 |          4.79 |         0.00 |
+| China     |         73 |          5.10 |         0.00 |
+| China     |         74 |          5.45 |         0.00 |
+| China     |         75 |          5.79 |         0.00 |
+| China     |         76 |          6.16 |         0.00 |
+| China     |         77 |          6.47 |         0.00 |
+| China     |         78 |          6.78 |         0.00 |
+| China     |         79 |          7.04 |         0.00 |
+| China     |         80 |          7.25 |         0.00 |
+| China     |         81 |          7.40 |         0.00 |
+| China     |         82 |          7.55 |         0.00 |
+| China     |         83 |          7.69 |         0.00 |
+| China     |         84 |          7.85 |         0.00 |
+| China     |         85 |          8.03 |         0.00 |
+| China     |         86 |          8.23 |         0.00 |
+| China     |         87 |          8.44 |         0.00 |
+| China     |         88 |          8.64 |         0.00 |
+| China     |         89 |          8.83 |         0.00 |
+| China     |         90 |          8.99 |         0.00 |
+| China     |         91 |          9.15 |         0.00 |
+| China     |         92 |          9.29 |         0.00 |
+| China     |         93 |          9.45 |         0.00 |
+| China     |         94 |          9.61 |         0.00 |
+| China     |         95 |          9.80 |         0.00 |
+| China     |         96 |         10.02 |         0.00 |
+| China     |         97 |         10.26 |         0.00 |
+| China     |         98 |         10.53 |         0.00 |
+| China     |         99 |         10.81 |         0.00 |
+| China     |        100 |         11.10 |         0.00 |
+| Germany   |          0 |          0.00 |         3.78 |
+| Germany   |          1 |          0.00 |         3.76 |
+| Germany   |          2 |          0.00 |         3.74 |
+| Germany   |          3 |          0.00 |         3.72 |
+| Germany   |          4 |          0.00 |         3.69 |
+| Germany   |          5 |          0.00 |         3.67 |
+| Germany   |          6 |          0.00 |         3.64 |
+| Germany   |          7 |          0.00 |         3.61 |
+| Germany   |          8 |          0.00 |         3.58 |
+| Germany   |          9 |          0.00 |         3.55 |
+| Germany   |         10 |          0.00 |         3.51 |
+| Germany   |         11 |          0.00 |         3.48 |
+| Germany   |         12 |          0.00 |         3.44 |
+| Germany   |         13 |          0.00 |         3.39 |
+| Germany   |         14 |          0.00 |         3.35 |
+| Germany   |         15 |          0.00 |         3.30 |
+| Germany   |         16 |          0.00 |         3.25 |
+| Germany   |         17 |          0.00 |         3.20 |
+| Germany   |         18 |          0.00 |         3.14 |
+| Germany   |         19 |          0.00 |         3.08 |
+| Germany   |         20 |          0.00 |         3.02 |
+| Germany   |         21 |          0.00 |         2.94 |
+| Germany   |         22 |          0.00 |         2.85 |
+| Germany   |         23 |          0.00 |         2.76 |
+| Germany   |         24 |          0.00 |         2.67 |
+| Germany   |         25 |          0.00 |         2.58 |
+| Germany   |         26 |          0.00 |         2.47 |
+| Germany   |         27 |          0.00 |         2.37 |
+| Germany   |         28 |          0.00 |         2.27 |
+| Germany   |         29 |          0.00 |         2.17 |
+| Germany   |         30 |          0.00 |         2.07 |
+| Germany   |         31 |          0.00 |         1.98 |
+| Germany   |         32 |          0.00 |         1.85 |
+| Germany   |         33 |          0.00 |         1.75 |
+| Germany   |         34 |          0.00 |         1.62 |
+| Germany   |         35 |          0.00 |         1.51 |
+| Germany   |         36 |          0.00 |         1.39 |
+| Germany   |         37 |          0.00 |         1.28 |
+| Germany   |         38 |          0.00 |         1.18 |
+| Germany   |         39 |          0.00 |         1.07 |
+| Germany   |         40 |          0.01 |         0.96 |
+| Germany   |         41 |          0.01 |         0.86 |
+| Germany   |         42 |          0.01 |         0.75 |
+| Germany   |         43 |          0.02 |         0.66 |
+| Germany   |         44 |          0.03 |         0.57 |
+| Germany   |         45 |          0.04 |         0.49 |
+| Germany   |         46 |          0.06 |         0.41 |
+| Germany   |         47 |          0.09 |         0.35 |
+| Germany   |         48 |          0.12 |         0.29 |
+| Germany   |         49 |          0.16 |         0.25 |
+| Germany   |         50 |          0.20 |         0.20 |
+| Germany   |         51 |          0.26 |         0.16 |
+| Germany   |         52 |          0.33 |         0.12 |
+| Germany   |         53 |          0.40 |         0.09 |
+| Germany   |         54 |          0.49 |         0.06 |
+| Germany   |         55 |          0.60 |         0.05 |
+| Germany   |         56 |          0.73 |         0.03 |
+| Germany   |         57 |          0.88 |         0.02 |
+| Germany   |         58 |          1.04 |         0.01 |
+| Germany   |         59 |          1.20 |         0.01 |
+| Germany   |         60 |          1.37 |         0.01 |
+| Germany   |         61 |          1.53 |         0.00 |
+| Germany   |         62 |          1.68 |         0.00 |
+| Germany   |         63 |          1.80 |         0.00 |
+| Germany   |         64 |          1.91 |         0.00 |
+| Germany   |         65 |          2.01 |         0.00 |
+| Germany   |         66 |          2.11 |         0.00 |
+| Germany   |         67 |          2.17 |         0.00 |
+| Germany   |         68 |          2.23 |         0.00 |
+| Germany   |         69 |          2.30 |         0.00 |
+| Germany   |         70 |          2.34 |         0.00 |
+| Germany   |         71 |          2.39 |         0.00 |
+| Germany   |         72 |          2.43 |         0.00 |
+| Germany   |         73 |          2.45 |         0.00 |
+| Germany   |         74 |          2.47 |         0.00 |
+| Germany   |         75 |          2.49 |         0.00 |
+| Germany   |         76 |          2.51 |         0.00 |
+| Germany   |         77 |          2.52 |         0.00 |
+| Germany   |         78 |          2.56 |         0.00 |
+| Germany   |         79 |          2.62 |         0.00 |
+| Germany   |         80 |          2.70 |         0.00 |
+| Germany   |         81 |          2.79 |         0.00 |
+| Germany   |         82 |          2.87 |         0.00 |
+| Germany   |         83 |          2.94 |         0.00 |
+| Germany   |         84 |          3.00 |         0.00 |
+| Germany   |         85 |          3.06 |         0.00 |
+| Germany   |         86 |          3.12 |         0.00 |
+| Germany   |         87 |          3.19 |         0.00 |
+| Germany   |         88 |          3.25 |         0.00 |
+| Germany   |         89 |          3.26 |         0.00 |
+| Germany   |         90 |          3.24 |         0.00 |
+| Germany   |         91 |          3.19 |         0.00 |
+| Germany   |         92 |          3.16 |         0.00 |
+| Germany   |         93 |          3.15 |         0.00 |
+| Germany   |         94 |          3.14 |         0.00 |
+| Germany   |         95 |          3.14 |         0.00 |
+| Germany   |         96 |          3.13 |         0.00 |
+| Germany   |         97 |          3.14 |         0.00 |
+| Germany   |         98 |          3.17 |         0.00 |
+| Germany   |         99 |          3.18 |         0.00 |
+| Germany   |        100 |          3.18 |         0.00 |
+| Guatemala |          0 |          0.00 |         3.55 |
+| Guatemala |          1 |          0.00 |         3.51 |
+| Guatemala |          2 |          0.00 |         3.47 |
+| Guatemala |          3 |          0.00 |         3.43 |
+| Guatemala |          4 |          0.00 |         3.39 |
+| Guatemala |          5 |          0.00 |         3.34 |
+| Guatemala |          6 |          0.00 |         3.29 |
+| Guatemala |          7 |          0.00 |         3.23 |
+| Guatemala |          8 |          0.00 |         3.17 |
+| Guatemala |          9 |          0.00 |         3.13 |
+| Guatemala |         10 |          0.00 |         3.07 |
+| Guatemala |         11 |          0.00 |         3.01 |
+| Guatemala |         12 |          0.00 |         2.94 |
+| Guatemala |         13 |          0.00 |         2.87 |
+| Guatemala |         14 |          0.00 |         2.80 |
+| Guatemala |         15 |          0.00 |         2.71 |
+| Guatemala |         16 |          0.00 |         2.64 |
+| Guatemala |         17 |          0.00 |         2.57 |
+| Guatemala |         18 |          0.00 |         2.51 |
+| Guatemala |         19 |          0.00 |         2.45 |
+| Guatemala |         20 |          0.00 |         2.37 |
+| Guatemala |         21 |          0.00 |         2.28 |
+| Guatemala |         22 |          0.00 |         2.18 |
+| Guatemala |         23 |          0.00 |         2.11 |
+| Guatemala |         24 |          0.00 |         2.01 |
+| Guatemala |         25 |          0.00 |         1.92 |
+| Guatemala |         26 |          0.00 |         1.84 |
+| Guatemala |         27 |          0.00 |         1.74 |
+| Guatemala |         28 |          0.00 |         1.65 |
+| Guatemala |         29 |          0.00 |         1.57 |
+| Guatemala |         30 |          0.00 |         1.47 |
+| Guatemala |         31 |          0.00 |         1.38 |
+| Guatemala |         32 |          0.00 |         1.29 |
+| Guatemala |         33 |          0.00 |         1.21 |
+| Guatemala |         34 |          0.01 |         1.11 |
+| Guatemala |         35 |          0.03 |         1.03 |
+| Guatemala |         36 |          0.05 |         0.95 |
+| Guatemala |         37 |          0.10 |         0.87 |
+| Guatemala |         38 |          0.16 |         0.81 |
+| Guatemala |         39 |          0.24 |         0.74 |
+| Guatemala |         40 |          0.35 |         0.67 |
+| Guatemala |         41 |          0.49 |         0.61 |
+| Guatemala |         42 |          0.66 |         0.54 |
+| Guatemala |         43 |          0.85 |         0.48 |
+| Guatemala |         44 |          1.07 |         0.42 |
+| Guatemala |         45 |          1.32 |         0.37 |
+| Guatemala |         46 |          1.60 |         0.32 |
+| Guatemala |         47 |          1.93 |         0.28 |
+| Guatemala |         48 |          2.28 |         0.24 |
+| Guatemala |         49 |          2.67 |         0.20 |
+| Guatemala |         50 |          3.08 |         0.17 |
+| Guatemala |         51 |          3.50 |         0.14 |
+| Guatemala |         52 |          3.94 |         0.12 |
+| Guatemala |         53 |          4.41 |         0.10 |
+| Guatemala |         54 |          4.93 |         0.08 |
+| Guatemala |         55 |          5.51 |         0.06 |
+| Guatemala |         56 |          6.14 |         0.05 |
+| Guatemala |         57 |          6.83 |         0.04 |
+| Guatemala |         58 |          7.56 |         0.03 |
+| Guatemala |         59 |          8.31 |         0.02 |
+| Guatemala |         60 |          9.04 |         0.02 |
+| Guatemala |         61 |          9.73 |         0.01 |
+| Guatemala |         62 |         10.36 |         0.01 |
+| Guatemala |         63 |         10.91 |         0.01 |
+| Guatemala |         64 |         11.38 |         0.00 |
+| Guatemala |         65 |         11.80 |         0.00 |
+| Guatemala |         66 |         12.24 |         0.00 |
+| Guatemala |         67 |         12.75 |         0.00 |
+| Guatemala |         68 |         13.37 |         0.00 |
+| Guatemala |         69 |         14.13 |         0.00 |
+| Guatemala |         70 |         14.99 |         0.00 |
+| Guatemala |         71 |         15.89 |         0.00 |
+| Guatemala |         72 |         16.75 |         0.00 |
+| Guatemala |         73 |         17.53 |         0.00 |
+| Guatemala |         74 |         18.19 |         0.00 |
+| Guatemala |         75 |         18.71 |         0.00 |
+| Guatemala |         76 |         19.14 |         0.00 |
+| Guatemala |         77 |         19.50 |         0.00 |
+| Guatemala |         78 |         19.84 |         0.00 |
+| Guatemala |         79 |         20.19 |         0.00 |
+| Guatemala |         80 |         20.55 |         0.00 |
+| Guatemala |         81 |         20.89 |         0.00 |
+| Guatemala |         82 |         21.16 |         0.00 |
+| Guatemala |         83 |         21.36 |         0.00 |
+| Guatemala |         84 |         21.49 |         0.00 |
+| Guatemala |         85 |         21.58 |         0.00 |
+| Guatemala |         86 |         21.69 |         0.00 |
+| Guatemala |         87 |         21.83 |         0.00 |
+| Guatemala |         88 |         22.01 |         0.00 |
+| Guatemala |         89 |         22.20 |         0.00 |
+| Guatemala |         90 |         22.35 |         0.00 |
+| Guatemala |         91 |         22.41 |         0.00 |
+| Guatemala |         92 |         22.39 |         0.00 |
+| Guatemala |         93 |         22.29 |         0.00 |
+| Guatemala |         94 |         22.17 |         0.00 |
+| Guatemala |         95 |         22.03 |         0.00 |
+| Guatemala |         96 |         21.91 |         0.00 |
+| Guatemala |         97 |         21.81 |         0.00 |
+| Guatemala |         98 |         21.74 |         0.00 |
+| Guatemala |         99 |         21.67 |         0.00 |
+| Guatemala |        100 |         21.58 |         0.00 |
 
 # References
 
