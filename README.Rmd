@@ -1,0 +1,211 @@
+---
+title: "Expected number of grandparents"
+author: "Diego Alburez-Gutierrez (MPIDR);" 
+date: "Nov 23 2022"
+output:
+  github_document:
+    pandoc_args: --webtex
+    toc: true
+    toc_depth: 1
+bibliography: kinship.bib
+---
+
+We will use matrix kinship models in a time-variant framework [@caswell_formal_2021] to compute the expected number of grandparents and grandchildren in a range of countries and the realted kin dependencies. 
+
+<img src="DemoKin-Logo.png" align="right" width="200" />
+
+# 1. Installation
+
+Install the [development version](https://github.com/IvanWilli/DemoKin) of DemoKin from GitHub (could take ~1 minute). We made changes to the `DemoKin` package ahead of this workshop If you had already installed the package, please uninstall it and and install it again.
+
+```{r, eval=FALSE}
+# remove.packages("DemoKin")
+# install.packages("devtools")
+devtools::install_github("IvanWilli/DemoKin", build_vignettes = TRUE)
+```
+
+Load packages: 
+
+```{r, warning=F, message=FALSE}
+library(DemoKin)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+# library(DT)
+library(knitr)
+```
+
+Define a function to get necessary data from the UNWPP
+
+```{r}
+get_UNWPP_inputs <- function(countries, my_startyr, my_endyr, variant = "Median"){
+  
+  
+  print("Getting API ready...")
+  # Get data from UN using API
+  
+  base_url <- 'https://population.un.org/dataportalapi/api/v1'
+  
+  # First, identify which indicator codes we want to use
+  
+  target <- paste0(base_url,'/indicators/?format=csv')
+  codes <- read.csv(target, sep='|', skip=1) 
+  
+  qx_code <- codes$Id[codes$ShortName == "qx1"]
+  asfr_code <- codes$Id[codes$ShortName == "ASFR1"]
+  pop_code <- codes$Id[codes$ShortName == "PopByAge1AndSex"]
+  
+  # Get location codes
+  
+  target <- paste0(base_url, '/locations?sort=id&format=csv')
+  df_locations <- read.csv(target, sep='|', skip=1)
+  
+  # find the codes for countries
+  
+  my_location <- 
+    df_locations %>% 
+    filter( Name %in% countries) %>% 
+    pull(Id) %>% 
+    paste(collapse = ",")
+  
+  # Get px values
+  
+  print(paste0("Getting mortality data for ", paste(countries, collapse = ", ")))
+  
+  my_indicator <- qx_code
+  my_location  <- my_location
+  
+  target <- paste0(base_url,
+                   '/data/indicators/',my_indicator,
+                   '/locations/',my_location,
+                   '/start/',my_startyr,
+                   '/end/',my_endyr,
+                   '/?format=csv')
+  
+  px <- 
+    read.csv(target, sep='|', skip=1) %>% 
+    filter(Variant %in% variant) %>% 
+    filter(Sex == "Female") %>% 
+    mutate(px = 1- Value) %>% 
+    select(Location, Time = TimeLabel, age = AgeStart, px)
+  
+  # ASFR
+  
+  print(paste0("Getting fertility data for ", paste(countries, collapse = ", ")))
+  
+  my_indicator <- asfr_code
+  
+  target <- paste0(base_url,
+                   '/data/indicators/',my_indicator,
+                   '/locations/',my_location,
+                   '/start/',my_startyr,
+                   '/end/',my_endyr,
+                   '/?format=csv')
+  
+  asfr <- 
+    read.csv(target, sep='|', skip=1) %>% 
+    filter(Variant %in% variant) %>% 
+    select(Location, Time = TimeLabel, age = AgeStart, ASFR = Value)
+  
+  data <- 
+    px %>% 
+    left_join(asfr, by = c("Location", "Time", "age")) %>% 
+    mutate(ASFR = replace(ASFR,is.na(ASFR),0)) 
+  
+  data
+}
+
+```
+
+# 2. Number of kin
+
+Let's get the numbers of China and Germany:
+
+```{r}
+
+# pick countries
+countries <- c("China", "Germany")
+
+# Year range
+
+my_startyr   <- 1950
+my_endyr     <- 2022
+
+data <- get_UNWPP_inputs(
+  countries = countries
+  , my_startyr = my_startyr
+  , my_endyr = my_endyr
+  )
+
+```
+
+Run kinship models for 2022 period:
+
+```{r}
+
+period_kin_temp <- 
+  data %>%
+  split(list(.$Location)) %>%
+  map_df(function(X){
+    print(unique(X$Location))
+    U <-
+      X %>%
+      select(Time, age, px) %>%
+      pivot_wider(names_from = Time, values_from = px) %>%
+      select(-age) %>% 
+      as.matrix()
+    f <- X %>%
+      select(Time, age, ASFR) %>%
+      mutate(ASFR = ASFR/1000) %>% 
+      pivot_wider(names_from = Time, values_from = ASFR) %>%
+      select(-age) %>% 
+      as.matrix()
+    kin(U, f, time_invariant = FALSE, output_kin = c("gm","gd"), output_period = 2022)$kin_summary %>%
+      mutate(Location = unique(X$Location),  .before = 1)
+  })
+
+
+```
+
+ The model is for female populations along matrilineal lines, but following Caswel [-@caswell_formal_2022], we can use Keyfitz factors to multiply kin and obtain male and female kin accordingly. This is a good-enough approximation:
+
+```{r}
+
+period_kin <- 
+  period_kin_temp %>% 
+  select(Location, kin, year, age_focal, count_living) %>% 
+  mutate(count_living = count_living*4)
+
+```
+
+# 3. Average number of granpdarent/grandchildren
+
+Now we can visualise the expected number of grandchildren and grandparents for an average member of the population surviving to each age. For example, a Chinese woman aged 50 has on average, 0.72 grandchildren and 0.08 living grandparents. Visually:
+
+```{r}
+period_kin %>% 
+  rename_kin()  %>% 
+  ggplot(aes(x = age_focal, y = count_living, color = Location)) +
+  geom_line(size = 2) + 
+  scale_x_continuous("Age of Focal (average member of the population)") +
+  scale_y_continuous("Average number of kin in 2022") +
+  facet_grid(~kin) + 
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+As a table:
+
+```{r}
+period_kin %>% 
+  mutate(
+    count_living = round(count_living, 2)
+    , kin = ifelse(kin == "gm", "grandparents", "grandchildren") 
+    ) %>% 
+  pivot_wider(names_from = kin, values_from = count_living) %>% 
+  select(-year) %>% 
+  kable()
+```
+
+# References
