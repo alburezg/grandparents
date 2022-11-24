@@ -7,11 +7,13 @@ Nov 23 2022
   - [2. Number of kin](#2-number-of-kin)
   - [3. Average number of
     granpdarent/grandchildren](#3-average-number-of-granpdarentgrandchildren)
+  - [4. Age differences between grandparents and
+    granchildren](#4-age-differences-between-grandparents-and-granchildren)
   - [References](#references)
 
 We will use matrix kinship models in a time-variant framework (Caswell
 and Song 2021) to compute the expected number of grandparents and
-grandchildren in a range of countries and the realted kin dependencies.
+grandchildren in a range of countries and the related kin dependencies.
 
 The code runs in R, preferably in RStudio.
 
@@ -21,8 +23,8 @@ The code runs in R, preferably in RStudio.
 
 Install the [development version](https://github.com/IvanWilli/DemoKin)
 of DemoKin from GitHub (could take \~1 minute). We made changes to the
-`DemoKin` package ahead of this workshop If you had already installed
-the package, please uninstall it and and install it again.
+`DemoKin` package recently. If you had already installed the package,
+please uninstall it and and install it again.
 
 ``` r
 # remove.packages("DemoKin")
@@ -541,6 +543,33 @@ period_kin %>%
 | Guatemala |         98 |         21.74 |         0.00 |
 | Guatemala |         99 |         21.67 |         0.00 |
 | Guatemala |        100 |         21.58 |         0.00 |
+
+# 4\. Age differences between grandparents and granchildren
+
+We can plot the age difference between members of the population and
+their grandparents and grandchildren, in this case for 2022, but it’s
+also possible to look at other years.
+
+``` r
+age_diff <- 
+  period_kin_temp %>% 
+  group_by(Location, year) %>%
+  mutate(age_diff = age_focal - mean_age) %>% 
+  ungroup() %>% 
+  select(Location, age_focal, kin, age_diff)
+
+age_diff %>% 
+  rename_kin() %>% 
+  ggplot(aes(x = age_focal, y = age_diff, colour = Location)) +
+  geom_line() +
+  scale_y_continuous("Age difference between Focal and kin in 2022") +
+  facet_grid(~kin) +
+  theme_bw()
+```
+
+    ## Warning: Removed 186 row(s) containing missing values (geom_path).
+
+![](README_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
 
 # References
 

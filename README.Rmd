@@ -208,4 +208,26 @@ period_kin %>%
   kable()
 ```
 
+# 4. Age differences between grandparents and granchildren
+
+We can plot the age difference between members of the population and their grandparents and grandchildren, in this case for 2022, but it's also possible to look at other years. 
+
+```{r}
+age_diff <- 
+  period_kin_temp %>% 
+  group_by(Location, year) %>%
+  mutate(age_diff = age_focal - mean_age) %>% 
+  ungroup() %>% 
+  select(Location, age_focal, kin, age_diff)
+
+age_diff %>% 
+  rename_kin() %>% 
+  ggplot(aes(x = age_focal, y = age_diff, colour = Location)) +
+  geom_line() +
+  scale_y_continuous("Age difference between Focal and kin in 2022") +
+  facet_grid(~kin) +
+  theme_bw()
+
+```
+
 # References
