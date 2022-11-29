@@ -215,7 +215,7 @@ We can plot the age difference between members of the population and their grand
 ```{r}
 age_diff <- 
   period_kin_temp %>% 
-  group_by(Location, year) %>%
+  group_by(Location, year, kin) %>%
   mutate(age_diff = age_focal - mean_age) %>% 
   ungroup() %>% 
   select(Location, age_focal, kin, age_diff)
