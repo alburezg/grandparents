@@ -3,10 +3,12 @@
 # I'll try answering this with simulation now using the SOCSIM outputs from the paper:
 # Alburez‐Gutierrez, D., Mason, C., and Zagheni, E. (2021). The “Sandwich Generation” Revisited: Global Demographic Drivers of Care Time Demands. Population and Development Review 47(4):997–1023. doi:10.1111/padr.12436.
 
+# Replication data is stored in the Harvard Dataverse
+# https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/SSZL6U
+
 # 0. Preamble ------
-# To get data from Harvard datavesre
-# https://cran.r-project.org/web/packages/dataverse/vignettes/C-download.html
-# library("dataverse")
+
+
 
 rm(list=ls())
 library(tidyverse)
@@ -90,9 +92,6 @@ find_grandparents <- function(countries, year, data_df, export = T){
     ungroup() %>% 
     mutate(url = paste0(file_api_base, id))
   
-  # urls_vec <- urls$url
-  # names(urls_vec) <- urls$label
-  
   # Get data
   
   print("Start estimations from microdata...")
@@ -106,7 +105,6 @@ find_grandparents <- function(countries, year, data_df, export = T){
 }
 
 find_grandparents2 <- function(urls, year, export){
-  # u = urls_vec[1]
   
   gps_list <- 
     lapply(1:nrow(urls), function(n, urls, year){
@@ -118,7 +116,6 @@ find_grandparents2 <- function(urls, year, export){
       
       print(paste0("Loading data for ", lab))
       
-      # rm("sims")
       # Load data
       load(url(u))
       
@@ -176,11 +173,11 @@ find_grandparents3 <- function(df, year){
   # find grandparents of these people
   egos <- df_alive$pid
   match_rows <- match(egos, df$pid)
-  
-  gp_pp <- df$pop[df$pop[match_rows]]
-  gp_pm <- df$pop[df$mom[match_rows]]
-  gp_mm <- df$mom[df$mom[match_rows]]
-  gp_mp <- df$mom[df$pop[match_rows]]
+
+  gp_pp <- df$pop[match(df$pop[match_rows], df$pid)]
+  gp_pm <- df$pop[match(df$mom[match_rows], df$pid)]
+  gp_mm <- df$mom[match(df$mom[match_rows], df$pid)]
+  gp_mp <- df$mom[match(df$pop[match_rows], df$pid)]
   
   # ID of all grandparrents, doesn't matter if they're alive
   gp <- unique(c(gp_pp, gp_pm, gp_mm, gp_mp))
@@ -347,60 +344,84 @@ pop_un <-
 
 # 4. Rough estimate of number of grandparents -------
 
+# 4.1. By country ============
+
 pop_gp_by_age <- 
   gps %>% 
   left_join(pop_un, by = c("iso3", "year", "age")) %>% 
   arrange(iso3) %>% 
-  mutate(gp_adj = sim_share * pop_un) %>% 
-  select(iso3, year, age, number_grandparents = gp_adj, share_grandparents = sim_share, pop_un)
+  mutate(number_grandparents = sim_share * pop_un) %>% 
+  select(iso3, year, age, number_grandparents, share_grandparents = sim_share, pop_un)
 
 # Not by age, but for all ages combined
-# pop_gp <- 
-#   pop_gp_by_age %>% 
-#   group_by(iso3, year) %>% 
-#   summarise(
-#     number_grandparents = sum(number_grandparents)
-#     , pop_un = sum(pop_un)
-#   ) %>% 
-#   ungroup() %>% 
-#   mutate(share_grandparents = number_grandparents/pop_un) %>%
-#   select(iso3, year, number_grandparents, share_grandparents, pop_un)
-
 pop_gp <-
-  gps %>%
+  pop_gp_by_age %>%
   group_by(iso3, year) %>%
-  summarise(
-    sim_pop = sum(sim_pop)
-    , sim_gp = sum(sim_gp)
-  ) %>%
-  ungroup() %>%
-  mutate(sim_share = sim_gp/sim_pop) %>%
-  left_join(
-    pop_un %>%
-      group_by(iso3, year) %>%
-      summarise(pop_un = sum(pop_un)) %>%
-      ungroup()
-    , by = c("iso3", "year")
-  ) %>%
-  mutate(gp_adj = sim_share * pop_un) %>%
-  select(iso3, year, number_grandparents = gp_adj, share_grandparents = sim_share, pop_un)
-
-# Grandparents in the world
-
-pop_gp_world <- 
-  pop_gp %>% 
-  group_by(year) %>% 
   summarise(
     number_grandparents = sum(number_grandparents)
     , pop_un = sum(pop_un)
-  ) %>% 
-  ungroup() %>% 
+  ) %>%
+  ungroup() %>%
+  mutate(share_grandparents = number_grandparents/pop_un) %>%
+  select(iso3, year, number_grandparents, share_grandparents, pop_un)
+
+# Alternative way of doing it (wrong, I think)
+# pop_gp <-
+#   gps %>%
+#   group_by(iso3, year) %>%
+#   summarise(
+#     sim_pop = sum(sim_pop)
+#     , sim_gp = sum(sim_gp)
+#   ) %>%
+#   ungroup() %>%
+#   mutate(sim_share = sim_gp/sim_pop) %>%
+#   left_join(
+#     pop_un %>%
+#       group_by(iso3, year) %>%
+#       summarise(pop_un = sum(pop_un)) %>%
+#       ungroup()
+#     , by = c("iso3", "year")
+#   ) %>%
+#   mutate(gp_adj = sim_share * pop_un) %>%
+#   select(iso3, year, number_grandparents = gp_adj, share_grandparents = sim_share, pop_un)
+
+
+# 4.2. World ===========
+
+pop_gp_world <-
+  pop_gp %>%
+  group_by(year) %>%
+  summarise(
+    number_grandparents = sum(number_grandparents)
+    , pop_un = sum(pop_un)
+  ) %>%
+  ungroup() %>%
   mutate(share_grandparents = number_grandparents/pop_un)
+
+# Alternative
+# pop_gp_world <-
+#   gps %>%
+#   group_by(year) %>%
+#   summarise(
+#     sim_pop = sum(sim_pop)
+#     , sim_gp = sum(sim_gp)
+#   ) %>%
+#   ungroup() %>%
+#   mutate(sim_share = sim_gp/sim_pop) %>%
+#   left_join(
+#     pop_un %>%
+#       group_by(year) %>%
+#       summarise(pop_un = sum(pop_un)) %>%
+#       ungroup()
+#     , by = c("year")
+#   ) %>%
+#   mutate(gp_adj = sim_share * pop_un) %>%
+#   select(year, number_grandparents = gp_adj, share_grandparents = sim_share, pop_un)
 
 # See coverage of estimates in terms of 'real' world population:
 
 # World population in 2022
-target <- paste0(base_url,
+target <- paste0('https://population.un.org/dataportalapi/api/v1',
                  '/data/indicators/',49,
                  '/locations/',900,
                  '/start/',2022,
@@ -412,10 +433,11 @@ pop_world <-
   filter(Variant == "Median", Sex == "Both sexes") %>% 
   select(year = TimeLabel, value = Value)
 
+# This is the proportion of completenes of gp estimates relative to 'real' world population
 pop_gp_world$pop_un / pop_world$value
 
 # 5. Export ----------
-
+write.csv(pop_gp_by_age, "Output/grandparents_by_country_age.csv", row.names = F)
 write.csv(pop_gp, "Output/grandparents_by_country.csv", row.names = F)
 write.csv(pop_gp_world, "Output/grandparents_world.csv", row.names = F)
 
@@ -435,8 +457,6 @@ pop_gp %>%
   theme(axis.text.y = element_text(angle = 30))
 
 ggsave("Output/grandparents.pdf", height = 20, width = 12, units = "in")
-
-
 
 # For seelcted countries
 # pop_gp %>% 
@@ -458,3 +478,12 @@ ggsave("Output/grandparents.pdf", height = 20, width = 12, units = "in")
 #   theme(legend.position = "bottom")
 # 
 # ggsave("grandparents_by_age.pdf")
+
+# System info --------
+
+Sys.info()
+
+# sysname            release            version           nodename            machine              login               user 
+# "Windows"           "10 x64"      "build 19044"       "LAP-404186"           "x86-64" "AlburezGutierrez" "AlburezGutierrez" 
+# effective_user 
+# "AlburezGutierrez" 
