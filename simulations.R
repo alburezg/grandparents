@@ -365,26 +365,6 @@ pop_gp <-
   mutate(share_grandparents = number_grandparents/pop_un) %>%
   select(iso3, year, number_grandparents, share_grandparents, pop_un)
 
-# Alternative way of doing it (wrong, I think)
-# pop_gp <-
-#   gps %>%
-#   group_by(iso3, year) %>%
-#   summarise(
-#     sim_pop = sum(sim_pop)
-#     , sim_gp = sum(sim_gp)
-#   ) %>%
-#   ungroup() %>%
-#   mutate(sim_share = sim_gp/sim_pop) %>%
-#   left_join(
-#     pop_un %>%
-#       group_by(iso3, year) %>%
-#       summarise(pop_un = sum(pop_un)) %>%
-#       ungroup()
-#     , by = c("iso3", "year")
-#   ) %>%
-#   mutate(gp_adj = sim_share * pop_un) %>%
-#   select(iso3, year, number_grandparents = gp_adj, share_grandparents = sim_share, pop_un)
-
 
 # 4.2. World ===========
 
@@ -397,26 +377,6 @@ pop_gp_world <-
   ) %>%
   ungroup() %>%
   mutate(share_grandparents = number_grandparents/pop_un)
-
-# Alternative
-# pop_gp_world <-
-#   gps %>%
-#   group_by(year) %>%
-#   summarise(
-#     sim_pop = sum(sim_pop)
-#     , sim_gp = sum(sim_gp)
-#   ) %>%
-#   ungroup() %>%
-#   mutate(sim_share = sim_gp/sim_pop) %>%
-#   left_join(
-#     pop_un %>%
-#       group_by(year) %>%
-#       summarise(pop_un = sum(pop_un)) %>%
-#       ungroup()
-#     , by = c("year")
-#   ) %>%
-#   mutate(gp_adj = sim_share * pop_un) %>%
-#   select(year, number_grandparents = gp_adj, share_grandparents = sim_share, pop_un)
 
 # See coverage of estimates in terms of 'real' world population:
 
@@ -458,6 +418,31 @@ pop_gp %>%
 
 ggsave("Output/grandparents.pdf", height = 20, width = 12, units = "in")
 
+# Checks ===========
+
+# There should be linear relationship between # grandparents and # of 65+
+
+pop_65 <- 
+  pop_un %>% 
+  filter(age >= 65) %>% 
+  group_by(iso3, year) %>% 
+  summarise(pop_un = sum(pop_un)) %>% 
+  ungroup()
+
+pop_gp %>% 
+  select(iso3, year, number_grandparents) %>% 
+  left_join(pop_65, by = c("iso3", "year")) %>% 
+  # filter(iso3 %in% c("JPN", "CHN")) %>% 
+  ggplot(aes(x = number_grandparents, y = pop_un, group = iso3)) +
+  geom_point() +
+  geom_abline(slope = 1) +
+  scale_x_log10("Number of grandparents") +
+  scale_y_log10("Number of 65+") +
+  coord_equal() +
+  theme_bw()
+
+ggsave("Output/grandparents_vs_65+.pdf")
+
 # For seelcted countries
 # pop_gp %>% 
 #   pivot_longer(number_grandparents:share_grandparents) %>% 
@@ -487,3 +472,46 @@ Sys.info()
 # "Windows"           "10 x64"      "build 19044"       "LAP-404186"           "x86-64" "AlburezGutierrez" "AlburezGutierrez" 
 # effective_user 
 # "AlburezGutierrez" 
+
+
+# Leftovers --------------
+
+# Alternative way of doing it (wrong, I think)
+# pop_gp <-
+#   gps %>%
+#   group_by(iso3, year) %>%
+#   summarise(
+#     sim_pop = sum(sim_pop)
+#     , sim_gp = sum(sim_gp)
+#   ) %>%
+#   ungroup() %>%
+#   mutate(sim_share = sim_gp/sim_pop) %>%
+#   left_join(
+#     pop_un %>%
+#       group_by(iso3, year) %>%
+#       summarise(pop_un = sum(pop_un)) %>%
+#       ungroup()
+#     , by = c("iso3", "year")
+#   ) %>%
+#   mutate(gp_adj = sim_share * pop_un) %>%
+#   select(iso3, year, number_grandparents = gp_adj, share_grandparents = sim_share, pop_un)
+
+# Alternative
+# pop_gp_world <-
+#   gps %>%
+#   group_by(year) %>%
+#   summarise(
+#     sim_pop = sum(sim_pop)
+#     , sim_gp = sum(sim_gp)
+#   ) %>%
+#   ungroup() %>%
+#   mutate(sim_share = sim_gp/sim_pop) %>%
+#   left_join(
+#     pop_un %>%
+#       group_by(year) %>%
+#       summarise(pop_un = sum(pop_un)) %>%
+#       ungroup()
+#     , by = c("year")
+#   ) %>%
+#   mutate(gp_adj = sim_share * pop_un) %>%
+#   select(year, number_grandparents = gp_adj, share_grandparents = sim_share, pop_un)

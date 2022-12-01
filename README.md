@@ -9,6 +9,8 @@ Nov 23 2022
     granpdarent/grandchildren](#3-average-number-of-granpdarentgrandchildren)
   - [4. Age differences between grandparents and
     granchildren](#4-age-differences-between-grandparents-and-granchildren)
+  - [5. Number of grandparentes in a
+    population](#5-number-of-grandparentes-in-a-population)
   - [References](#references)
 
 We will use matrix kinship models in a time-variant framework (Caswell
@@ -40,7 +42,7 @@ library(dplyr)
 library(tidyr)
 library(purrr)
 library(ggplot2)
-# library(DT)
+library(countrycode)
 library(knitr)
 ```
 
@@ -122,6 +124,94 @@ get_UNWPP_inputs <- function(countries, my_startyr, my_endyr, variant = "Median"
     mutate(ASFR = replace(ASFR,is.na(ASFR),0)) 
   
   data
+}
+
+# To get UN population
+get_unwpp_pop <- function(countries,  my_startyr = 2022, my_endyr = 2022){
+  base_url <- 'https://population.un.org/dataportalapi/api/v1'
+  
+  # First, identify which indicator codes we want to use
+  
+  target <- paste0(base_url,'/indicators/?format=csv')
+  codes <- read.csv(target, sep='|', skip=1) 
+  
+  pop_code <- codes$Id[codes$ShortName == "PopByAge1AndSex"]
+  
+  # Get location codes
+  
+  target <- paste0(base_url, '/locations?sort=id&format=csv')
+  df_locations <- read.csv(target, sep='|', skip=1)
+  
+  # find the codes for countries
+  iso3 <- countrycode(countries, origin = "country.name", destination = "iso3c")
+  
+  locs <- 
+    df_locations %>% 
+    filter(Iso3 %in% iso3) %>% 
+    pull(Id) 
+  
+  my_location <- paste(locs, collapse = ",")
+  
+  print(paste0("Getting pop data for ", paste(countries, collapse = ", ")))
+  
+  
+  # Avoid overwhelming UN APi
+  if(length(countries) <= 20){
+    
+    my_indicator <- pop_code
+    my_location  <- my_location
+    
+    target <- paste0(base_url,
+                     '/data/indicators/',my_indicator,
+                     '/locations/',my_location,
+                     '/start/',my_startyr,
+                     '/end/',my_endyr,
+                     '/?format=csv')
+    
+    pop <- 
+      read.csv(target, sep='|', skip=1) %>% 
+      filter(Variant == "Median") %>% 
+      select(iso3 = Iso3, country = Location, year = TimeLabel, age = AgeStart, sex = Sex, value = Value)
+    
+  } else{
+    print("Many countries, I'll process in batch")
+    
+    my_indicator <- pop_code
+    
+    times <- floor(length(locs)/10)
+    sp_vec <- rep(1:10, times)
+    extras <- length(locs) - length(sp_vec)
+    if(extras > 0) sp_vec <- c(sp_vec, 1:extras)
+    
+    my_location_l  <- split(locs, sp_vec)
+    
+    pop <- 
+      lapply(1:length(my_location_l), function(n, my_location_l){
+        
+        print(paste0("Processing batch ", n, "/", length(my_location_l) ))
+        
+        loc_n <- paste(my_location_l[[n]], collapse = ",")
+        
+        target <- paste0(base_url,
+                         '/data/indicators/',my_indicator,
+                         '/locations/', loc_n,
+                         '/start/',my_startyr,
+                         '/end/',my_endyr,
+                         '/?format=csv')
+        
+        pop <- read.csv(target, sep='|', skip=1)
+        
+        Sys.sleep(1)
+        pop
+      }, my_location_l) %>% 
+      bind_rows() %>% 
+      filter(Variant == "Median") %>% 
+      select(iso3 = Iso3, country = Location, year = TimeLabel, age = AgeStart, sex = Sex, value = Value)
+    
+  }
+  
+  return(pop) 
+  
 }
 ```
 
@@ -553,7 +643,7 @@ also possible to look at other years.
 ``` r
 age_diff <- 
   period_kin_temp %>% 
-  group_by(Location, year) %>%
+  group_by(Location, year, kin) %>%
   mutate(age_diff = age_focal - mean_age) %>% 
   ungroup() %>% 
   select(Location, age_focal, kin, age_diff)
@@ -570,6 +660,119 @@ age_diff %>%
     ## Warning: Removed 186 row(s) containing missing values (geom_path).
 
 ![](README_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
+
+# 5\. Number of grandparentes in a population
+
+The intuition here is that if Focal has 2 maternal grandmothers (since
+we are operating in a female matrilineal population). So, if we use GKP
+factors, we can approximate the number of grandparents as `g(x) =
+gm(x)*4`. (Caswell 2022). In a given population, around 4 people will
+share a grandparent. So, an approximation of the number of grandparents
+would be a factor of the population `p(x)` by `g(x)/4`.
+
+``` r
+# Get UN population
+# World population in 2022
+pop <- 
+  get_unwpp_pop(countries, my_startyr = 2022, my_endyr = 2022) %>% 
+  filter(sex == "Both sexes") %>%
+  # filter(sex == "Female") %>%
+  rename(pop_un = value)
+```
+
+    ## [1] "Getting pop data for China, Guatemala, Germany"
+
+``` r
+num_gp <- 
+  period_kin %>% 
+  filter(kin == "grandparents") %>% 
+  rename(age = age_focal) %>% 
+  mutate(iso3 = countrycode(Location, origin = "country.name", destination = "iso3c")) %>% 
+  pivot_wider(names_from = kin, values_from = count_living) %>% 
+  left_join(pop, by = c("iso3", "year", "age")) %>% 
+  mutate(
+    # pop_gp = pop_un*(grandparents/grandchildren)
+    number_grandparents = pop_un*grandparents/4
+    , number_grandparents = ifelse(is.infinite(number_grandparents), 0, number_grandparents)
+    , share_grandparents = number_grandparents/pop_un
+    ) 
+  # select(iso3, year, age, pop_un, number_grandparents, share_grandparents)
+
+# Sum over all ages 
+
+num_gp_sum <- 
+  num_gp %>% 
+  group_by(iso3, year) %>%
+  summarise(
+    number_grandparents = sum(number_grandparents)
+    , pop_un = sum(pop_un)
+  ) %>%
+  ungroup() %>%
+  mutate(share_grandparents = number_grandparents/pop_un) %>%
+  select(iso3, year, number_grandparents, share_grandparents, pop_un)
+```
+
+    ## `summarise()` has grouped output by 'iso3'. You can override using the `.groups`
+    ## argument.
+
+``` r
+num_gp_sum %>% 
+  pivot_longer(number_grandparents:share_grandparents) %>% 
+  ggplot(aes(y = iso3, x = value)) +
+  geom_col(position = position_dodge()) +
+  facet_wrap(~name, scale = "free") +
+  theme_bw() +
+  theme(legend.position = "bottom") +
+  theme(axis.text.y = element_text(angle = 30))
+```
+
+![](README_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
+
+Print
+
+``` r
+print(num_gp_sum)
+```
+
+    ## # A tibble: 3 x 5
+    ##   iso3   year number_grandparents share_grandparents     pop_un
+    ##   <chr> <int>               <dbl>              <dbl>      <int>
+    ## 1 CHN    2022          471538367.              0.331 1425887358
+    ## 2 DEU    2022           25504177.              0.306   83369866
+    ## 3 GTM    2022            8511910.              0.477   17843934
+
+Quality check: plot against number of 65+
+
+``` r
+pop_65 <- 
+  pop %>% 
+  filter(age >= 65) %>% 
+  group_by(iso3, year) %>% 
+  summarise(pop_un = sum(pop_un)) %>% 
+  ungroup()
+```
+
+    ## `summarise()` has grouped output by 'iso3'. You can override using the `.groups`
+    ## argument.
+
+``` r
+num_gp_sum %>% 
+  select(iso3, year, number_grandparents) %>% 
+  left_join(pop_65, by = c("iso3", "year")) %>% 
+  ggplot(aes(x = number_grandparents, y = pop_un, group = iso3)) +
+  geom_point() +
+  geom_label(aes(label = iso3)) +
+  geom_abline(slope = 1) +
+  scale_x_log10("Number of grandparents") +
+  scale_y_log10("Number of 65+") +
+  coord_equal() +
+  theme_bw()
+```
+
+![](README_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
+
+While this sort of makes sense, the values are considerably higher than
+what we would get if we use simulations.
 
 # References
 
