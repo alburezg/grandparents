@@ -268,7 +268,8 @@ period_kin <-
   select(Location, kin, year, age_focal, count_living) %>% 
   mutate(
     count_living = count_living*4
-    , kin = ifelse(kin == "gm", "grandparents", "grandchildren"))
+    , kin = ifelse(kin == "gm", "grandparents", "grandchildren")
+    )
 
 ```
 
@@ -333,20 +334,63 @@ pop <-
   # filter(sex == "Female") %>%
   rename(pop_un = value)
 
-num_gp <- 
+pp <- 
   period_kin %>% 
-  filter(kin == "grandparents") %>% 
   rename(age = age_focal) %>% 
   mutate(iso3 = countrycode(Location, origin = "country.name", destination = "iso3c")) %>% 
   pivot_wider(names_from = kin, values_from = count_living) %>% 
-  left_join(pop, by = c("iso3", "year", "age")) %>% 
+  left_join(pop, by = c("iso3", "year", "age"))
+
+# Option 1: assume 4 granchildren
+
+# num_gp1 <- 
+#   pp %>% 
+#   mutate(
+#     number_grandparents = pop_un*grandparents/4
+#     , number_grandparents = ifelse(is.infinite(number_grandparents), 0, number_grandparents)
+#     , share_grandparents = grandparents/4
+#     # same as
+#     # , share_grandparents = number_grandparents/pop_un
+#     ) 
+
+# OPTION 2: get number of granchildren from average age of grandparents
+# get mean number of grandchildren at each age
+mean_gc <-
+  period_kin_temp %>% 
+  filter(kin == "gm") %>% 
+  select(Location, year, age_focal, mean_age) %>% 
   mutate(
-    # pop_gp = pop_un*(grandparents/grandchildren)
-    number_grandparents = pop_un*grandparents/4
+    mean_age = round(age_focal + mean_age, 0)
+    , mean_age = ifelse(mean_age > 100 | is.na(mean_age), 100, mean_age)
+    ) %>% 
+  rename(age_gc = age_focal) %>% 
+  left_join(
+    period_kin_temp %>% 
+      filter(kin == "gd") %>% 
+      # To include male granchildren
+      mutate(
+        count_living = count_living*4
+        # Since focal is included in the count, substract 1??
+        # , count_living = count_living - 1
+        ) %>% 
+      select(Location, year, age_focal, number_gc = count_living)
+    , by = c("Location", "year", "mean_age" = 'age_focal')
+  ) %>% 
+    rename(age_gp = mean_age) %>% 
+    arrange(Location, year, age_gp) %>% 
+  mutate(iso3 = countrycode(Location, origin = "country.name", destination = "iso3c")) %>% 
+  select(-Location, - age_gp)
+
+
+num_gp <-
+  pp %>% 
+  left_join(mean_gc, by = c("iso3", "year", "age" = "age_gc")) %>% 
+    mutate(
+    number_grandparents = pop_un*grandparents/number_gc
     , number_grandparents = ifelse(is.infinite(number_grandparents), 0, number_grandparents)
     , share_grandparents = number_grandparents/pop_un
     ) 
-  # select(iso3, year, age, pop_un, number_grandparents, share_grandparents)
+
 
 # Sum over all ages 
 
