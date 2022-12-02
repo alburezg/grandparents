@@ -8,8 +8,6 @@
 
 # 0. Preamble ------
 
-
-
 rm(list=ls())
 library(tidyverse)
 library(httr)
@@ -18,10 +16,15 @@ library(countrycode)
 # countries <- c("Germany", "Guatemala", "China", "USA")
 countries <- c("all")
 # How many simulations per country? max 5
+# Don't touch this
 num_sims <- 1
-year <- 2022
 
-# To conver months to yeares
+years <- seq(1990, 2040, 5)
+
+# Don't touch this
+get_un_pop_from_api <- F
+
+# To convert months to yeares in SOCSIM
 # 20200414 This should work for new estimates up to 2200
 FinalSimYear <-  2200
 endmo <-  5400
@@ -90,7 +93,8 @@ find_grandparents <- function(countries, year, data_df, export = T){
     group_by(country) %>% 
     slice(1:num_sims) %>% 
     ungroup() %>% 
-    mutate(url = paste0(file_api_base, id))
+    mutate(url = paste0(file_api_base, id)) %>% 
+    data.frame()
   
   # Get data
   
@@ -128,10 +132,10 @@ find_grandparents2 <- function(urls, year, export){
         )
       
       print("Finding grandparents...")
-      out <- find_grandparents3(df = opop, year = year)
+      out <- find_grandparents3(opop = opop, year = year)
       out$country <- con
       out$seed <- se
-      out$year <- year
+      # out$year <- year
       
       out$share <- out$gp / out$pop 
       out[is.na(out)] <- 0
@@ -151,55 +155,58 @@ find_grandparents2 <- function(urls, year, export){
     gps_list %>%
     bind_rows()
   
-  # gps_df <- 
-  #   gps_list %>% 
-  #   bind_rows() %>% 
-  #   mutate(share = gp / pop) 
-  # 
-  # gps_df[is.na(gps_df)] <- 0
-  
   return(gps_df)
   
 }
 
 # Function to identify share of the population that is a grandparent
-find_grandparents3 <- function(df, year){
-  # Keep only people alive in given year
-  df_alive <- 
-    df %>% 
-    filter(ego_birth_year <= year, ego_death_year > year) %>% 
-    mutate(ego_age_now = year - ego_birth_year)
+find_grandparents3 <- function(opop, year){
+  out_l <- 
+    lapply(year, function(y, opop){
+      print(paste0("Working on year ", y))
+    # Keep only people alive in given year
+    df_alive <- 
+      opop %>% 
+      filter(ego_birth_year <= y, ego_death_year > y) %>% 
+      mutate(ego_age_now = y - ego_birth_year)
+    
+    # find grandparents of these people
+    egos <- df_alive$pid
+    match_rows <- match(egos, opop$pid)
+    
+    gp_pp <- opop$pop[match(opop$pop[match_rows], opop$pid)]
+    gp_pm <- opop$pop[match(opop$mom[match_rows], opop$pid)]
+    gp_mm <- opop$mom[match(opop$mom[match_rows], opop$pid)]
+    gp_mp <- opop$mom[match(opop$pop[match_rows], opop$pid)]
+    
+    # ID of all grandparrents, doesn't matter if they're alive
+    gp <- unique(c(gp_pp, gp_pm, gp_mm, gp_mp))
+    
+    # ID of living grandpanrents in year 'year'
+    gp_alive <- gp[gp %in% egos]
+    
+    # Get number of grandpas by age
+    gp_pop <- 
+      df_alive[match(gp_alive, df_alive$pid), ] %>% 
+      count(age = ego_age_now, name = "gp")
+    
+    # Get age distribution of population in general
+    all_pop <- 
+      df_alive %>% 
+      count(age = ego_age_now, name = "pop")
+    
+    out <- 
+      all_pop %>%
+      left_join(gp_pop, by = c("age"))
+    
+    out$year <- y
+    
+    out
+  }, opop)
   
-  # find grandparents of these people
-  egos <- df_alive$pid
-  match_rows <- match(egos, df$pid)
-
-  gp_pp <- df$pop[match(df$pop[match_rows], df$pid)]
-  gp_pm <- df$pop[match(df$mom[match_rows], df$pid)]
-  gp_mm <- df$mom[match(df$mom[match_rows], df$pid)]
-  gp_mp <- df$mom[match(df$pop[match_rows], df$pid)]
-  
-  # ID of all grandparrents, doesn't matter if they're alive
-  gp <- unique(c(gp_pp, gp_pm, gp_mm, gp_mp))
-  
-  # ID of living grandpanrents in year 'year'
-  gp_alive <- gp[gp %in% egos]
-  
-  # Get number of grandpas by age
-  gp_pop <- 
-    df_alive[match(gp_alive, df_alive$pid), ] %>% 
-    count(age = ego_age_now, name = "gp")
-  
-  # Get age distribution of population in general
-  all_pop <- 
-    df_alive %>% 
-    count(age = ego_age_now, name = "pop")
-  
-  out <- 
-    all_pop %>%
-    left_join(gp_pop, by = c("age"))
-  
+  out <- bind_rows(out_l)
   out
+  
 }
 
 
@@ -255,8 +262,8 @@ get_unwpp_pop <- function(countries,  my_startyr = 2022, my_endyr = 2022){
     
     my_indicator <- pop_code
     
-    times <- floor(length(locs)/10)
-    sp_vec <- rep(1:10, times)
+    times <- floor(length(locs)/20)
+    sp_vec <- rep(1:20, times)
     extras <- length(locs) - length(sp_vec)
     if(extras > 0) sp_vec <- c(sp_vec, 1:extras)
     
@@ -309,7 +316,11 @@ if(countries[1] == "all"){
   countries <- unique(countries_df$country)
 }
 
-find_grandparents(countries, year, data_df, export = T)
+# Get country iso codes
+iso3_codes <- countrycode(countries, origin = "country.name", destination = "iso3c")
+
+find_grandparents(countries, years, data_df, export = T)
+Sys.time()
 
 # Read gp data from disk
 
@@ -326,21 +337,46 @@ gps <-
 # 3. Multiply by population numbers --------------
 
 # Get pop numbers from UN
-if(!file.exists("un_pop.csv")){
-  pop <- get_unwpp_pop(countries, my_startyr = year, my_endyr = year) 
-  write.csv(pop, "un_pop.csv", row.names = F)
+if(get_un_pop_from_api){
+  if(!file.exists("un_pop.csv")){
+    pop <- get_unwpp_pop(countries, my_startyr = min(year), my_endyr = max(year)) 
+    write.csv(pop, "un_pop.csv", row.names = F)
+  } else {
+    pop <- read.csv("un_pop.csv", stringsAsFactors = F)
+  }  
+  # Aggregate by sex
+  pop_un <- 
+    pop %>% 
+    arrange(iso3) %>% 
+    filter(sex == "Both sexes") %>% 
+    rename(pop_un = value) %>% 
+    select(-country, -sex)
 } else {
-  pop <- read.csv("un_pop.csv", stringsAsFactors = F)
+  if(!file.exists("Data/un_pop_full.csv")){
+    # If this doesn't work, you may need to download the data from
+    # https://population.un.org/wpp/Download/Files/1_Indicators%20(Standard)/CSV_FILES/WPP2022_Population1JanuaryBySingleAgeSex_Medium_1950-2021.zip
+    # https://population.un.org/wpp/Download/Files/1_Indicators%20(Standard)/CSV_FILES/WPP2022_Population1JanuaryBySingleAgeSex_Medium_2022-2100.zip
+    library(data.table)
+    pop <- 
+      fread("Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_1950-2021.csv") %>% 
+      bind_rows(fread("Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_2022-2100.csv")) %>% 
+      filter(LocTypeName == "Country/Area", Variant == "Medium") %>% 
+      select(iso3 = ISO3_code, year = Time, age = AgeGrp, pop_un = PopTotal) %>% 
+      mutate(
+        age = as.numeric(ifelse(age == "100+", 100, age))
+        , pop_un = pop_un*1000
+        )
+    
+    fwrite(pop, "Data/un_pop_full.csv", row.names = F)
+  } else {
+  pop <- read.csv("Data/un_pop_full.csv", stringsAsFactors = F)  
+  }
+  pop_un <- 
+    pop %>% 
+    # Keep only relevant years and countries
+    filter(year %in% years) %>% 
+    filter(iso3 %in% iso3_codes)
 }
-
-
-# Aggregate by sex
-pop_un <- 
-  pop %>% 
-  arrange(iso3) %>% 
-  filter(sex == "Both sexes") %>% 
-  rename(pop_un = value) %>% 
-  select(-country, -sex)
 
 # 4. Rough estimate of number of grandparents -------
 
@@ -394,7 +430,7 @@ pop_world <-
   select(year = TimeLabel, value = Value)
 
 # This is the proportion of completenes of gp estimates relative to 'real' world population
-pop_gp_world$pop_un / pop_world$value
+pop_gp_world[pop_gp_world$year == 2020,]$pop_un / pop_world$value
 
 # 5. Export ----------
 write.csv(pop_gp_by_age, "Output/grandparents_by_country_age.csv", row.names = F)
@@ -403,22 +439,38 @@ write.csv(pop_gp_world, "Output/grandparents_world.csv", row.names = F)
 
 # 6. Plot -----------
 
-iso3_factor <- pop_gp$iso3[order(pop_gp$share_grandparents)]
+# Distribution of grandparents over age 
+
+pop_gp_by_age %>%
+  filter(iso3 %in% c("CHN", "USA", "GTM")) %>% 
+  filter(year == 2020) %>% 
+  pivot_longer(number_grandparents:share_grandparents) %>% 
+  ggplot(aes(x = age, y = value)) +
+  geom_line() +
+  geom_vline(xintercept = 65) +
+  facet_wrap(name~iso3, scales = "free")
+
+ggsave("Output/grandparents_age.pdf")
+
+# Total grandparents around the world
+
+pop_year <- pop_gp %>% 
+  filter(year == 2020)
+
+iso3_factor <- pop_year$iso3[order(pop_year$share_grandparents)]
 
 pop_gp %>% 
-  # arrange(number_grandparents) %>% 
+  filter(year %in% c(1990, 2020)) %>% 
   mutate(iso3 = factor(iso3, levels = iso3_factor)) %>%
   pivot_longer(number_grandparents:share_grandparents) %>% 
   ggplot(aes(y = iso3, x = value)) +
   geom_col(position = position_dodge()) +
-  facet_wrap(~name, scale = "free") +
+  facet_wrap(year~name, scale = "free") +
   theme_bw() +
   theme(legend.position = "bottom") +
   theme(axis.text.y = element_text(angle = 30))
 
 ggsave("Output/grandparents.pdf", height = 20, width = 12, units = "in")
-
-# Checks ===========
 
 # There should be linear relationship between # grandparents and # of 65+
 
@@ -432,37 +484,41 @@ pop_65 <-
 pop_gp %>% 
   select(iso3, year, number_grandparents) %>% 
   left_join(pop_65, by = c("iso3", "year")) %>% 
-  # filter(iso3 %in% c("JPN", "CHN")) %>% 
-  ggplot(aes(x = number_grandparents, y = pop_un, group = iso3)) +
+  mutate(year = as.factor(year)) %>% 
+  ggplot(aes(x = number_grandparents, y = pop_un, group = iso3, colour = year)) +
   geom_point() +
   geom_abline(slope = 1) +
-  scale_x_log10("Number of grandparents") +
-  scale_y_log10("Number of 65+") +
+  scale_x_log10("Number of grandparents in each country") +
+  scale_y_log10("Number of 65+ in each country") +
   coord_equal() +
-  theme_bw()
+  theme_bw() +
+  theme(legend.position = "bottom")
 
 ggsave("Output/grandparents_vs_65+.pdf")
 
-# For seelcted countries
-# pop_gp %>% 
-#   pivot_longer(number_grandparents:share_grandparents) %>% 
-#   ggplot(aes(x = iso3, y = value)) +
-#   geom_col(position = position_dodge()) +
-#   facet_wrap(~name, scale = "free") +
-#   theme_bw() +
-#   theme(legend.position = "bottom") 
+# Number of grandparents over time 
 
-# ggsave("grandparents.pdf")
+full_world <- 
+  pop_gp_world %>% 
+  left_join(
+    pop_65 %>% 
+      group_by(year) %>% 
+      summarise(pop65 = sum(pop_un)) %>% 
+      ungroup()
+    , by = c("year")
+    ) %>% 
+  pivot_longer(-year) %>% 
+  mutate(group = ifelse(name == "share_grandparents", "Grandparents per capita", "Number of people"))
 
-# pop_gp_by_age %>% 
-#   pivot_longer(number_grandparents:share_grandparents) %>% 
-#   ggplot(aes(x = age, y = value)) +
-#   geom_col(position = position_dodge()) +
-#   facet_wrap(name~iso3, scale = "free") +
-#   theme_bw() +
-#   theme(legend.position = "bottom")
-# 
-# ggsave("grandparents_by_age.pdf")
+full_world %>% 
+  ggplot(aes(x = year, y = value, group = name, colour = name)) +
+  geom_line(size = 1) +
+  facet_wrap(.~group, scale = "free") +
+  theme_bw() +
+  labs(colour = "", y = "") +
+  theme(legend.position = "bottom") 
+
+ggsave("Output/grandparents_over_time.pdf")
 
 # System info --------
 
@@ -472,46 +528,3 @@ Sys.info()
 # "Windows"           "10 x64"      "build 19044"       "LAP-404186"           "x86-64" "AlburezGutierrez" "AlburezGutierrez" 
 # effective_user 
 # "AlburezGutierrez" 
-
-
-# Leftovers --------------
-
-# Alternative way of doing it (wrong, I think)
-# pop_gp <-
-#   gps %>%
-#   group_by(iso3, year) %>%
-#   summarise(
-#     sim_pop = sum(sim_pop)
-#     , sim_gp = sum(sim_gp)
-#   ) %>%
-#   ungroup() %>%
-#   mutate(sim_share = sim_gp/sim_pop) %>%
-#   left_join(
-#     pop_un %>%
-#       group_by(iso3, year) %>%
-#       summarise(pop_un = sum(pop_un)) %>%
-#       ungroup()
-#     , by = c("iso3", "year")
-#   ) %>%
-#   mutate(gp_adj = sim_share * pop_un) %>%
-#   select(iso3, year, number_grandparents = gp_adj, share_grandparents = sim_share, pop_un)
-
-# Alternative
-# pop_gp_world <-
-#   gps %>%
-#   group_by(year) %>%
-#   summarise(
-#     sim_pop = sum(sim_pop)
-#     , sim_gp = sum(sim_gp)
-#   ) %>%
-#   ungroup() %>%
-#   mutate(sim_share = sim_gp/sim_pop) %>%
-#   left_join(
-#     pop_un %>%
-#       group_by(year) %>%
-#       summarise(pop_un = sum(pop_un)) %>%
-#       ungroup()
-#     , by = c("year")
-#   ) %>%
-#   mutate(gp_adj = sim_share * pop_un) %>%
-#   select(year, number_grandparents = gp_adj, share_grandparents = sim_share, pop_un)
