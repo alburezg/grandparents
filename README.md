@@ -9,22 +9,25 @@ Dec 07 2022
 
 |                                                                         |
 | :---------------------------------------------------------------------- |
-| Code by:                                                                |
-| Diego Alburez-Gutierrez,                                                |
-| Kinship Inequalites Research Group,                                     |
+| ***Code by***                                                           |
+| Diego Alburez-Gutierrez, PhD                                            |
+| Kinship Inequalities Research Group,                                    |
 | Max Planck Institute for Demographic Research                           |
 | <https://www.demogr.mpg.de/en/research_6120/kinship_inequalities_10703> |
+| alburezgutierrez\[at\]demogr.mpg.de                                     |
+| <https://www.twitter.com/d_alburez>                                     |
 
 These are back-of-the-envelope estimates to answer the question: ‘how
 many grandparents are there in the world’? I do this by relying on a
 series of country-level synthetic population microdata with a
-genealogical structure produced using the SOCSIM software. The synthetic
-microdata come from the paper:
+genealogical structure produced using the SOCSIM software
+(<https://lab.demog.berkeley.edu/socsim/>). The synthetic microdata come
+from the paper:
 
 Alburez‐Gutierrez, D., Mason, C., and Zagheni, E. (2021). The “Sandwich
 Generation” Revisited: Global Demographic Drivers of Care Time Demands.
-Population and Development Review 47(4):997–1023.
-<doi:10.1111/padr.12436>.
+Population and Development Review 47(4):997–1023. doi:
+<https://doi.org/10.1111/padr.12436>.
 
 Details on the simulation implementation, data sources, and parameters
 are given in the paper. Here I will analyse the replication data for
@@ -458,8 +461,8 @@ Guatemala in 2022, irrespective of how old the are?
   ungroup() %>%
   mutate(share_grandparents = number_grandparents/pop_un) %>%
   mutate(
-    pop_un = pop_un/1e6
-    , number_grandparents = number_grandparents/1e6
+    pop_un = round(pop_un/1e6, 1)
+    , number_grandparents = round(number_grandparents/1e6, 1)
     ) %>% 
   select(iso3, year, `Number of grandparents (millions)` = number_grandparents, `Total population (millions)` = pop_un, `Grandparents per capita` = share_grandparents) %>% 
   kable()
@@ -470,15 +473,20 @@ Guatemala in 2022, irrespective of how old the are?
 
 | iso3 | year | Number of grandparents (millions) | Total population (millions) | Grandparents per capita |
 | :--- | ---: | --------------------------------: | --------------------------: | ----------------------: |
-| GTM  | 2022 |                          2.882572 |                     17.8421 |               0.1615601 |
+| GTM  | 2022 |                               2.9 |                        17.8 |               0.1615601 |
 
 # 3\. Replicate for all countries
 
 We do the same thing, but scaling it up to all countries present in the
 UNWPP data (<https://population.un.org/wpp/>).
 
-For this, we won’t use the UN API to get the population data because
-it’s not very efficient.
+Note that running the code chunk below is likely to take a couple of
+hours and requires constantly downloading data from the Harvard
+Dataverse and writing outputs to the disk. The final estimates are
+stored in the [Output](Output) directory, at the country level (by age
+and for all ages combined) and for the entire world. Estimates for
+1990-2020 rely on UNWPP ‘historical’ data, whereas estimates for
+2025-2040 come from UNWPP projections (medium scenario).
 
 ``` r
 # 1. Preamble
