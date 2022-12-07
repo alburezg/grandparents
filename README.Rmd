@@ -1,124 +1,235 @@
 ---
-title: "Expected number of grandparents"
-author: "Diego Alburez-Gutierrez (MPIDR);" 
-date: "Nov 23 2022"
+title: "How many grandparents are there in the world?"
+date: "Dec 07 2022"
 output:
   github_document:
     pandoc_args: --webtex
     toc: true
     toc_depth: 1
-bibliography: kinship.bib
 ---
 
-We will use matrix kinship models in a time-variant framework [@caswell_formal_2021] to compute the expected number of grandparents and grandchildren in a range of countries and the related kin dependencies. 
+----------------------------------
+Code by:
 
-The code runs in R, preferably in RStudio.
+Diego Alburez-Gutierrez,
 
-<img src="DemoKin-Logo.png" align="right" width="200" />
+Kinship Inequalites Research Group,
 
-# 1. Installation
+Max Planck Institute for Demographic Research
 
-Install the [development version](https://github.com/IvanWilli/DemoKin) of DemoKin from GitHub (could take ~1 minute). We made changes to the `DemoKin` package recently. If you had already installed the package, please uninstall it and and install it again.
+https://www.demogr.mpg.de/en/research_6120/kinship_inequalities_10703
+----------------------------------
 
-```{r, eval=FALSE}
-# remove.packages("DemoKin")
-# install.packages("devtools")
-devtools::install_github("IvanWilli/DemoKin", build_vignettes = TRUE)
-```
+These are back-of-the-envelope estimates to answer the question: 'how many grandparents are there in the world'? I do this by relying on a series of country-level synthetic population microdata with a genealogical structure produced using the SOCSIM software. The synthetic microdata come from the paper:
 
-Load packages: 
+Alburez‐Gutierrez, D., Mason, C., and Zagheni, E. (2021). The “Sandwich Generation” Revisited: Global Demographic Drivers of Care Time Demands. Population and Development Review 47(4):997–1023. doi:https://doi.org/10.1111/padr.12436.
+
+Details on the simulation implementation, data sources, and parameters are given in the paper. Here I will analyse the replication data for this paper, which is stored in the Harvard Dataverse: https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/SSZL6U. 
+
+Note that the estimates are rough approximations and estimates for smaller countries (e.g., with populations smaller than 1 million) should be interpreted with special care.
+
+The scripts access these data using the Harvard Dataverse API, so you need a connection to the internet to replicate this code. The code runs in R, preferably in RStudio.
+
+# 1. Load packages and functions 
+
+## 1.1. Packages
 
 ```{r, warning=F, message=FALSE}
-library(DemoKin)
-library(dplyr)
-library(tidyr)
-library(purrr)
-library(ggplot2)
+library(tidyverse)
+library(httr)
 library(countrycode)
+library(data.table)
 library(knitr)
 ```
 
-Define a function to get necessary data from the UNWPP
+## 1.2. Functions
+
+Define a number of functions for getting data, re-arranging simulation data, and doing the analysis.
+
+<details><summary><b>SHOW CODE</b></summary>
+<p>
 
 ```{r}
-get_UNWPP_inputs <- function(countries, my_startyr, my_endyr, variant = "Median"){
-  
-  
-  print("Getting API ready...")
-  # Get data from UN using API
-  
-  base_url <- 'https://population.un.org/dataportalapi/api/v1'
-  
-  # First, identify which indicator codes we want to use
-  
-  target <- paste0(base_url,'/indicators/?format=csv')
-  codes <- read.csv(target, sep='|', skip=1) 
-  
-  qx_code <- codes$Id[codes$ShortName == "qx1"]
-  asfr_code <- codes$Id[codes$ShortName == "ASFR1"]
-  pop_code <- codes$Id[codes$ShortName == "PopByAge1AndSex"]
-  
-  # Get location codes
-  
-  target <- paste0(base_url, '/locations?sort=id&format=csv')
-  df_locations <- read.csv(target, sep='|', skip=1)
-  
-  # find the codes for countries
-  
-  my_location <- 
-    df_locations %>% 
-    filter( Name %in% countries) %>% 
-    pull(Id) %>% 
-    paste(collapse = ",")
-  
-  # Get px values
-  
-  print(paste0("Getting mortality data for ", paste(countries, collapse = ", ")))
-  
-  my_indicator <- qx_code
-  my_location  <- my_location
-  
-  target <- paste0(base_url,
-                   '/data/indicators/',my_indicator,
-                   '/locations/',my_location,
-                   '/start/',my_startyr,
-                   '/end/',my_endyr,
-                   '/?format=csv')
-  
-  px <- 
-    read.csv(target, sep='|', skip=1) %>% 
-    filter(Variant %in% variant) %>% 
-    filter(Sex == "Female") %>% 
-    mutate(px = 1- Value) %>% 
-    select(Location, Time = TimeLabel, age = AgeStart, px)
-  
-  # ASFR
-  
-  print(paste0("Getting fertility data for ", paste(countries, collapse = ", ")))
-  
-  my_indicator <- asfr_code
-  
-  target <- paste0(base_url,
-                   '/data/indicators/',my_indicator,
-                   '/locations/',my_location,
-                   '/start/',my_startyr,
-                   '/end/',my_endyr,
-                   '/?format=csv')
-  
-  asfr <- 
-    read.csv(target, sep='|', skip=1) %>% 
-    filter(Variant %in% variant) %>% 
-    select(Location, Time = TimeLabel, age = AgeStart, ASFR = Value)
-  
-  data <- 
-    px %>% 
-    left_join(asfr, by = c("Location", "Time", "age")) %>% 
-    mutate(ASFR = replace(ASFR,is.na(ASFR),0)) 
-  
-  data
+# a function to convert socsim months to calendar years
+asYr2 <- function(x, FinalSimYear, endmo) {
+  return(trunc(FinalSimYear - (endmo - x)/12) +1)
 }
 
-# To get UN population
+# Get data in dataveres
+list_data <- function(){
+  print("Getting API ready...")
+  
+  # 1. Get links to download simulation data from Harvard Dataverse 
+  # https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/SSZL6U
+  
+  # Get list of files from Datavsers
+  api_call <- "https://dataverse.harvard.edu/api/datasets/:persistentId?persistentId=doi:10.7910/DVN/SSZL6U"
+  
+  res <- GET(api_call)
+  strikes <- jsonlite::fromJSON(content(res, 'text'), simplifyVector = FALSE)
+  
+  data_list <- strikes$data$latestVersion$files
+  
+  data_df <- 
+    lapply(data_list, function(x) data.frame(x)) %>% 
+    bind_rows() %>% 
+    mutate(
+      country = str_extract(label, "[A-z]+")
+      , country = gsub("_", "", country)
+      , seed = str_extract(label, "[0-9]+")
+    ) %>% 
+    select(country, seed , label, id = dataFile.id)
+  
+  return(data_df)
+}
+
+find_grandparents <- function(countries, year, data_df, export = T){
+  
+  # Avoid unnecessary calculations by NOT running again analysis for countries
+  # that alrady have a saved csv file
+  if(export){
+    f <- list.files("Output", pattern = "gp_")
+    f <- gsub("gp_|.csv", "", f)
+    f <- gsub("_[0-9]+", "", f)
+    f <- gsub("_", "", f)
+    avoid <- countries[countries %in% f]
+    print(paste0("Note: skipping countries already in Output: ", paste(avoid, collapse = ", ")))
+    countries <- countries[!countries %in% f]
+    
+    if(!length(countries)){
+      return(cat("All countries processed!"))
+    }
+    
+  }
+  
+  file_api_base <- "https://dataverse.harvard.edu/api/access/datafile/"
+  
+  urls <- 
+    data_df %>% 
+    filter(country %in% countries) %>% 
+    # The first USA sim files is empty, skip it!
+    filter(!label %in% c("USA_200407")) %>% 
+    group_by(country) %>% 
+    slice(1:num_sims) %>% 
+    ungroup() %>% 
+    mutate(url = paste0(file_api_base, id)) %>% 
+    data.frame()
+  
+  # Get data
+  
+  print("Start estimations from microdata...")
+  
+  gp <- find_grandparents2(urls, year, export)
+  
+  if(!export){
+    return(gp)
+  }
+  
+}
+
+find_grandparents2 <- function(urls, year, export){
+  
+  gps_list <- 
+    lapply(1:nrow(urls), function(n, urls, year){
+      
+      u <- urls$url[n]
+      con <- urls$country[n]
+      se <- urls$seed[n]
+      lab <- urls$label[n]
+      
+      print(paste0("Loading data for ", lab))
+      
+      # Load data
+      load(url(u))
+      
+      # Convert months to years
+      opop <- 
+        sims$opop %>% 
+        mutate(
+          ego_birth_year = asYr2(dob, FinalSimYear, endmo)
+          , ego_death_year = asYr2(dod, FinalSimYear, endmo)
+        )
+      
+      print("Finding grandparents...")
+      out <- find_grandparents3(opop = opop, year = year)
+      out$country <- con
+      out$seed <- se
+      # out$year <- year
+      
+      out$share <- out$gp / out$pop 
+      out[is.na(out)] <- 0
+      
+      if(export){
+        print("Writing grandparent estiamtes to Output.")
+        write.csv(out, paste0("Output/gp_", lab, ".csv"))
+      } else {
+        return(out)
+      }
+      
+      closeAllConnections()
+      
+    }, urls = urls, year = year)
+  
+  gps_df <-
+    gps_list %>%
+    bind_rows()
+  
+  return(gps_df)
+  
+}
+
+# Function to identify share of the population that is a grandparent
+find_grandparents3 <- function(opop, year){
+  out_l <- 
+    lapply(year, function(y, opop){
+      print(paste0("Working on year ", y))
+    # Keep only people alive in given year
+    df_alive <- 
+      opop %>% 
+      filter(ego_birth_year <= y, ego_death_year > y) %>% 
+      mutate(ego_age_now = y - ego_birth_year)
+    
+    # find grandparents of these people
+    egos <- df_alive$pid
+    match_rows <- match(egos, opop$pid)
+    
+    gp_pp <- opop$pop[match(opop$pop[match_rows], opop$pid)]
+    gp_pm <- opop$pop[match(opop$mom[match_rows], opop$pid)]
+    gp_mm <- opop$mom[match(opop$mom[match_rows], opop$pid)]
+    gp_mp <- opop$mom[match(opop$pop[match_rows], opop$pid)]
+    
+    # ID of all grandparrents, doesn't matter if they're alive
+    gp <- unique(c(gp_pp, gp_pm, gp_mm, gp_mp))
+    
+    # ID of living grandpanrents in year 'year'
+    gp_alive <- gp[gp %in% egos]
+    
+    # Get number of grandpas by age
+    gp_pop <- 
+      df_alive[match(gp_alive, df_alive$pid), ] %>% 
+      count(age = ego_age_now, name = "gp")
+    
+    # Get age distribution of population in general
+    all_pop <- 
+      df_alive %>% 
+      count(age = ego_age_now, name = "pop")
+    
+    out <- 
+      all_pop %>%
+      left_join(gp_pop, by = c("age"))
+    
+    out$year <- y
+    
+    out
+  }, opop)
+  
+  out <- bind_rows(out_l)
+  out
+  
+}
+
+
+# Get population data from UNWPP
 get_unwpp_pop <- function(countries,  my_startyr = 2022, my_endyr = 2022){
   base_url <- 'https://population.un.org/dataportalapi/api/v1'
   
@@ -170,8 +281,8 @@ get_unwpp_pop <- function(countries,  my_startyr = 2022, my_endyr = 2022){
     
     my_indicator <- pop_code
     
-    times <- floor(length(locs)/10)
-    sp_vec <- rep(1:10, times)
+    times <- floor(length(locs)/20)
+    sp_vec <- rep(1:20, times)
     extras <- length(locs) - length(sp_vec)
     if(extras > 0) sp_vec <- c(sp_vec, 1:extras)
     
@@ -205,197 +316,237 @@ get_unwpp_pop <- function(countries,  my_startyr = 2022, my_endyr = 2022){
   return(pop) 
   
 }
+```
 
+</p>
+</details>
+
+# 2. Example for one country: grandparents in Guatemala
+
+First, show how the estimation works for Guatemala as an example. Later on, I'll scale this up for all world countries. 
+
+Define parameters for analysis:
+
+```{r}
+countries <- c("Guatemala")
+# How many simulations per country? max 5
+# Don't touch this
+num_sims <- 1
+
+years <- 2022
+
+# Don't touch this
+get_un_pop_from_api <- T
+
+# To convert months to yeares in SOCSIM
+FinalSimYear <-  2200
+endmo <-  5400
+```
+
+Load the simulation data from the Harvard database
+
+```{r}
+# Show simulations for which countries are available
+data_df <- list_data()
+all_countries <- unique(data_df$country)
+
+# Get country iso codes
+iso3_codes <- countrycode(countries, origin = "country.name", destination = "iso3c")
 
 ```
 
-# 2. Number of kin
-
-Let's get the numbers of China, Guatemala, and Germany:
+Now, implement the analysis to see how many people have grandparents in the simulation
 
 ```{r}
+gps_df <- find_grandparents(countries, years, data_df, export = F)
 
-# pick countries
-countries <- c("China", "Guatemala", "Germany")
+# rename things
+gps <-  
+  gps_df %>% 
+  rename(sim_pop = pop, sim_gp = gp, sim_share = share) %>% 
+  mutate(iso3 = countrycode(country, origin = "country.name", destination = "iso3c")) %>% 
+  select(iso3, year, age, -country, everything())
+```
 
-# Year range
+Combine with UN population numbers to get an approximation of the number of grandparents in the real population.
 
-my_startyr   <- 1950
-my_endyr     <- 2022
+```{r}
+# Get pop numbers from UN using API
+pop <- get_unwpp_pop(countries, my_startyr = years, my_endyr = years)
 
-data <- get_UNWPP_inputs(
-  countries = countries
-  , my_startyr = my_startyr
-  , my_endyr = my_endyr
-  )
+# Aggregate by sex
+pop_un <- 
+    pop %>% 
+    arrange(iso3) %>% 
+    filter(sex == "Both sexes") %>% 
+    rename(pop_un = value) %>% 
+    select(-country, -sex)
+
+# Combine simulation estimates and UN population numbers to get estimated number of grandparents
+
+pop_gp_by_age <- 
+  gps %>% 
+  left_join(pop_un, by = c("iso3", "year", "age")) %>% 
+  mutate(number_grandparents = sim_share * pop_un) %>% 
+  select(iso3, year, age, number_grandparents, share_grandparents = sim_share, pop_un)
 
 ```
 
-Run kinship models for 2022 period:
+We can now visualise the number of grandparents over age and the 'per capita' number of grandparents over age (i.e., the share of the population aged `x` who are grandparents).
 
 ```{r}
+# Distribution of grandparents over age 
 
-period_kin_temp <- 
-  data %>%
-  split(list(.$Location)) %>%
-  map_df(function(X){
-    print(unique(X$Location))
-    U <-
-      X %>%
-      select(Time, age, px) %>%
-      pivot_wider(names_from = Time, values_from = px) %>%
-      select(-age) %>% 
-      as.matrix()
-    f <- X %>%
-      select(Time, age, ASFR) %>%
-      mutate(ASFR = ASFR/1000) %>% 
-      pivot_wider(names_from = Time, values_from = ASFR) %>%
-      select(-age) %>% 
-      as.matrix()
-    kin(U, f, time_invariant = FALSE, output_kin = c("gm","gd"), output_period = 2022)$kin_summary %>%
-      mutate(Location = unique(X$Location),  .before = 1)
-  })
-
-
+pop_gp_by_age %>%
+  rename(`Grandparents per capita` = share_grandparents, `Number of grandparents` = number_grandparents) %>% 
+  select(-pop_un) %>% 
+  pivot_longer(-c(iso3, year, age)) %>% 
+  # mutate() %>% 
+  ggplot(aes(x = age, y = value)) +
+  geom_line() +
+  facet_wrap(.~name, scales = "free") +
+  labs(y = "") +
+  theme_bw()
 ```
 
- The model is for female populations along matrilineal lines, but following Caswel [-@caswell_formal_2022], we can use Keyfitz factors to multiply kin and obtain male and female kin accordingly. This is a good-enough approximation:
+Finally, let's answer the question: how many grandparents are there in Guatemala in 2022, irrespective of how old the are?
 
 ```{r}
-
-period_kin <- 
-  period_kin_temp %>% 
-  select(Location, kin, year, age_focal, count_living) %>% 
+# Not by age, but for all ages combined
+  pop_gp_by_age %>%
+  group_by(iso3, year) %>%
+  summarise(
+    number_grandparents = sum(number_grandparents)
+    , pop_un = sum(pop_un)
+  ) %>%
+  ungroup() %>%
+  mutate(share_grandparents = number_grandparents/pop_un) %>%
   mutate(
-    count_living = count_living*4
-    , kin = ifelse(kin == "gm", "grandparents", "grandchildren")
-    )
-
-```
-
-# 3. Average number of granpdarent/grandchildren
-
-Now we can visualise the expected number of grandchildren and grandparents for an average member of the population surviving to each age. For example, a Chinese woman aged 50 has on average, 0.72 grandchildren and 0.08 living grandparents. Visually:
-
-```{r}
-period_kin %>% 
-  ggplot(aes(x = age_focal, y = count_living, color = Location)) +
-  geom_line(size = 2) + 
-  scale_x_continuous("Age of Focal (average member of the population)") +
-  scale_y_continuous("Average number of kin in 2022") +
-  facet_grid(~kin) + 
-  theme_bw() +
-  theme(legend.position = "bottom")
-```
-
-As a table:
-
-```{r}
-period_kin %>% 
-  mutate(count_living = round(count_living, 2)) %>% 
-  pivot_wider(names_from = kin, values_from = count_living) %>% 
-  select(-year) %>% 
+    pop_un = pop_un/1e6
+    , number_grandparents = number_grandparents/1e6
+    ) %>% 
+  select(iso3, year, `Number of grandparents (millions)` = number_grandparents, `Total population (millions)` = pop_un, `Grandparents per capita` = share_grandparents) %>% 
   kable()
 ```
 
-# 4. Age differences between grandparents and granchildren
+# 3. Replicate for all countries
 
-We can plot the age difference between members of the population and their grandparents and grandchildren, in this case for 2022, but it's also possible to look at other years. 
+We do the same thing, but scaling it up to all countries present in the UNWPP data (https://population.un.org/wpp/). 
 
-```{r}
-age_diff <- 
-  period_kin_temp %>% 
-  group_by(Location, year, kin) %>%
-  mutate(age_diff = age_focal - mean_age) %>% 
-  ungroup() %>% 
-  select(Location, age_focal, kin, age_diff)
+For this, we won't use the UN API to get the population data because it's not very efficient. 
 
-age_diff %>% 
-  rename_kin() %>% 
-  ggplot(aes(x = age_focal, y = age_diff, colour = Location)) +
-  geom_line() +
-  scale_y_continuous("Age difference between Focal and kin in 2022") +
-  facet_grid(~kin) +
-  theme_bw()
+```{r, eval=FALSE}
+# 1. Preamble
 
-```
+countries <- c("all")
+# How many simulations per country? max 5
+# Don't touch this
+num_sims <- 1
 
-# 5. Number of grandparentes in a population 
+years <- seq(1990, 2040, 5)
 
-The intuition here is that if Focal has 2 maternal grandmothers (since we are operating in a female matrilineal population). So, if we use GKP factors, we can approximate the number of grandparents as `g(x) = gm(x)*4`.  [@caswell_formal_2022]. In a given population, around 4 people will share a grandparent. So, an approximation of the number of grandparents would be a factor of the population `p(x)` by `g(x)/4`.
+# Don't touch this
+get_un_pop_from_api <- F
 
-```{r}
+# To convert months to yeares in SOCSIM
+# 20200414 This should work for new estimates up to 2200
+FinalSimYear <-  2200
+endmo <-  5400
 
-# Get UN population
-# World population in 2022
-pop <- 
-  get_unwpp_pop(countries, my_startyr = 2022, my_endyr = 2022) %>% 
-  filter(sex == "Both sexes") %>%
-  # filter(sex == "Female") %>%
-  rename(pop_un = value)
+# 2. Locate grandparents in simulaions -----------
 
-pp <- 
-  period_kin %>% 
-  rename(age = age_focal) %>% 
-  mutate(iso3 = countrycode(Location, origin = "country.name", destination = "iso3c")) %>% 
-  pivot_wider(names_from = kin, values_from = count_living) %>% 
-  left_join(pop, by = c("iso3", "year", "age"))
+data_df <- list_data()
+all_countries <- unique(data_df$country)
 
-# Option 1: assume 4 granchildren
+# Get all countries 
+print("Getting data for all UN countries.")
+# Remove regions, etc. 
+countries_df <- 
+    data_df %>% 
+    filter(!country %in% c("Chinaanddependencies", "ChinaMacaoSAR")) %>% 
+    mutate(iso3 = countrycode(country, origin = "country.name", destination = "iso3c")) %>% 
+    filter(!is.na(iso3))
+  
+countries <- unique(countries_df$country)
 
-# num_gp1 <- 
-#   pp %>% 
-#   mutate(
-#     number_grandparents = pop_un*grandparents/4
-#     , number_grandparents = ifelse(is.infinite(number_grandparents), 0, number_grandparents)
-#     , share_grandparents = grandparents/4
-#     # same as
-#     # , share_grandparents = number_grandparents/pop_un
-#     ) 
+# Get country iso codes
+iso3_codes <- countrycode(countries, origin = "country.name", destination = "iso3c")
 
-# OPTION 2: get number of granchildren from average age of grandparents
-# get mean number of grandchildren at each age
-mean_gc <-
-  period_kin_temp %>% 
-  filter(kin == "gm") %>% 
-  select(Location, year, age_focal, mean_age) %>% 
-  mutate(
-    mean_age = round(age_focal + mean_age, 0)
-    , mean_age = ifelse(mean_age > 100 | is.na(mean_age), 100, mean_age)
-    ) %>% 
-  rename(age_gc = age_focal) %>% 
-  left_join(
-    period_kin_temp %>% 
-      filter(kin == "gd") %>% 
-      # To include male granchildren
+find_grandparents(countries, years, data_df, export = T)
+
+# Read gp data from disk
+
+f <- list.files("Output", pattern = "gp_", full.names = T)
+
+gps <- 
+  lapply(f, read.csv) %>% 
+  bind_rows() %>% 
+  select(-X) %>% 
+  rename(sim_pop = pop, sim_gp = gp, sim_share = share) %>% 
+  mutate(iso3 = countrycode(country, origin = "country.name", destination = "iso3c")) %>% 
+  select(iso3, year, age, -country, everything())
+
+# 3. Multiply by population numbers --------------
+
+# Get pop numbers from UN
+if(!file.exists("Data/un_pop_full.csv")){
+    # If this doesn't work, you may need to download the data from
+    # https://population.un.org/wpp/Download/Files/1_Indicators%20(Standard)/CSV_FILES/WPP2022_Population1JanuaryBySingleAgeSex_Medium_1950-2021.zip
+    # https://population.un.org/wpp/Download/Files/1_Indicators%20(Standard)/CSV_FILES/WPP2022_Population1JanuaryBySingleAgeSex_Medium_2022-2100.zip
+  
+  # Download UN data and unzip
+
+  # Estimates and historical data
+  
+  # download.file("https://population.un.org/wpp/Download/Files/1_Indicators%20(Standard)/CSV_FILES/WPP2022_Population1JanuaryBySingleAgeSex_Medium_1950-2021.zip", "Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_1950-2021.zip")
+  
+  unzip("Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_1950-2021.zip", exdir = "Data")
+  
+  file.remove("Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_1950-2021.zip")
+  
+  # Projections
+  
+    # download.file("https://population.un.org/wpp/Download/Files/1_Indicators%20(Standard)/CSV_FILES/WPP2022_Population1JanuaryBySingleAgeSex_Medium_2022-2100.zip", "Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_2022-2100.zip")
+  
+  unzip("Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_2022-2100.zip", exdir = "Data")
+  
+  file.remove("Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_2022-2100.zip")
+
+    pop <- 
+      fread("Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_1950-2021.csv") %>% 
+      bind_rows(fread("Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_2022-2100.csv")) %>% 
+      filter(LocTypeName == "Country/Area", Variant == "Medium") %>% 
+      select(iso3 = ISO3_code, year = Time, age = AgeGrp, pop_un = PopTotal) %>% 
       mutate(
-        count_living = count_living*4
-        # Since focal is included in the count, substract 1??
-        # , count_living = count_living - 1
-        ) %>% 
-      select(Location, year, age_focal, number_gc = count_living)
-    , by = c("Location", "year", "mean_age" = 'age_focal')
-  ) %>% 
-    rename(age_gp = mean_age) %>% 
-    arrange(Location, year, age_gp) %>% 
-  mutate(iso3 = countrycode(Location, origin = "country.name", destination = "iso3c")) %>% 
-  select(-Location, - age_gp)
+        age = as.numeric(ifelse(age == "100+", 100, age))
+        , pop_un = pop_un*1000
+        )
+    
+    fwrite(pop, "Data/un_pop_full.csv", row.names = F)
+  } else {
+  pop <- read.csv("Data/un_pop_full.csv", stringsAsFactors = F)  
+  }
 
+  pop_un <- 
+    pop %>% 
+    # Keep only relevant years and countries
+    filter(year %in% years) %>% 
+    filter(iso3 %in% iso3_codes)
 
-num_gp <-
-  pp %>% 
-  left_join(mean_gc, by = c("iso3", "year", "age" = "age_gc")) %>% 
-    mutate(
-    number_grandparents = pop_un*grandparents/number_gc
-    , number_grandparents = ifelse(is.infinite(number_grandparents), 0, number_grandparents)
-    , share_grandparents = number_grandparents/pop_un
-    ) 
+# 4. Rough estimate of number of grandparents -------
 
+# 4.1. By country ============
 
-# Sum over all ages 
+pop_gp_by_age <- 
+  gps %>% 
+  left_join(pop_un, by = c("iso3", "year", "age")) %>% 
+  arrange(iso3) %>% 
+  mutate(number_grandparents = sim_share * pop_un) %>% 
+  select(iso3, year, age, number_grandparents, share_grandparents = sim_share, pop_un)
 
-num_gp_sum <- 
-  num_gp %>% 
+# Not by age, but for all ages combined
+pop_gp <-
+  pop_gp_by_age %>%
   group_by(iso3, year) %>%
   summarise(
     number_grandparents = sum(number_grandparents)
@@ -405,46 +556,26 @@ num_gp_sum <-
   mutate(share_grandparents = number_grandparents/pop_un) %>%
   select(iso3, year, number_grandparents, share_grandparents, pop_un)
 
-num_gp_sum %>% 
-  pivot_longer(number_grandparents:share_grandparents) %>% 
-  ggplot(aes(y = iso3, x = value)) +
-  geom_col(position = position_dodge()) +
-  facet_wrap(~name, scale = "free") +
-  theme_bw() +
-  theme(legend.position = "bottom") +
-  theme(axis.text.y = element_text(angle = 30))
+# For the whole world
+pop_gp_world <-
+  pop_gp %>%
+  group_by(year) %>%
+  summarise(
+    number_grandparents = sum(number_grandparents)
+    , pop_un = sum(pop_un)
+  ) %>%
+  ungroup() %>%
+  mutate(share_grandparents = number_grandparents/pop_un)
+
+# 5. Export 
+write.csv(pop_gp_by_age, "Output/grandparents_by_country_age.csv", row.names = F)
+write.csv(pop_gp, "Output/grandparents_by_country.csv", row.names = F)
+write.csv(pop_gp_world, "Output/grandparents_world.csv", row.names = F)
 
 ```
 
-Print
+## Session info
 
 ```{r}
-print(num_gp_sum)
+sessionInfo()
 ```
-
-Quality check: plot against number of 65+
-
-```{r}
-pop_65 <- 
-  pop %>% 
-  filter(age >= 65) %>% 
-  group_by(iso3, year) %>% 
-  summarise(pop_un = sum(pop_un)) %>% 
-  ungroup()
-
-num_gp_sum %>% 
-  select(iso3, year, number_grandparents) %>% 
-  left_join(pop_65, by = c("iso3", "year")) %>% 
-  ggplot(aes(x = number_grandparents, y = pop_un, group = iso3)) +
-  geom_point() +
-  geom_label(aes(label = iso3)) +
-  geom_abline(slope = 1) +
-  scale_x_log10("Number of grandparents") +
-  scale_y_log10("Number of 65+") +
-  coord_equal() +
-  theme_bw()
-```
-
-While this sort of makes sense, the values are considerably higher than what we would get if we use simulations. 
-
-# References

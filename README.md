@@ -1,132 +1,248 @@
-Expected number of grandparents
+How many grandparents are there in the world?
 ================
-Diego Alburez-Gutierrez (MPIDR);
-Nov 23 2022
+Dec 07 2022
 
-  - [1. Installation](#1-installation)
-  - [2. Number of kin](#2-number-of-kin)
-  - [3. Average number of
-    granpdarent/grandchildren](#3-average-number-of-granpdarentgrandchildren)
-  - [4. Age differences between grandparents and
-    granchildren](#4-age-differences-between-grandparents-and-granchildren)
-  - [5. Number of grandparentes in a
-    population](#5-number-of-grandparentes-in-a-population)
-  - [References](#references)
+  - [1. Load packages and functions](#1-load-packages-and-functions)
+  - [2. Example for one country: grandparents in
+    Guatemala](#2-example-for-one-country-grandparents-in-guatemala)
+  - [3. Replicate for all countries](#3-replicate-for-all-countries)
 
-We will use matrix kinship models in a time-variant framework (Caswell
-and Song 2021) to compute the expected number of grandparents and
-grandchildren in a range of countries and the related kin dependencies.
+|                                                                         |
+| :---------------------------------------------------------------------- |
+| Code by:                                                                |
+| Diego Alburez-Gutierrez,                                                |
+| Kinship Inequalites Research Group,                                     |
+| Max Planck Institute for Demographic Research                           |
+| <https://www.demogr.mpg.de/en/research_6120/kinship_inequalities_10703> |
 
-The code runs in R, preferably in RStudio.
+These are back-of-the-envelope estimates to answer the question: ‘how
+many grandparents are there in the world’? I do this by relying on a
+series of country-level synthetic population microdata with a
+genealogical structure produced using the SOCSIM software. The synthetic
+microdata come from the paper:
 
-<img src="DemoKin-Logo.png" align="right" width="200" />
+Alburez‐Gutierrez, D., Mason, C., and Zagheni, E. (2021). The “Sandwich
+Generation” Revisited: Global Demographic Drivers of Care Time Demands.
+Population and Development Review 47(4):997–1023.
+<doi:10.1111/padr.12436>.
 
-# 1\. Installation
+Details on the simulation implementation, data sources, and parameters
+are given in the paper. Here I will analyse the replication data for
+this paper, which is stored in the Harvard Dataverse:
+<https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/SSZL6U>.
 
-Install the [development version](https://github.com/IvanWilli/DemoKin)
-of DemoKin from GitHub (could take \~1 minute). We made changes to the
-`DemoKin` package recently. If you had already installed the package,
-please uninstall it and and install it again.
+Note that the estimates are rough approximations and estimates for
+smaller countries (e.g., with populations smaller than 1 million) should
+be interpreted with special care.
+
+The scripts access these data using the Harvard Dataverse API, so you
+need a connection to the internet to replicate this code. The code runs
+in R, preferably in RStudio.
+
+# 1\. Load packages and functions
+
+## 1.1. Packages
 
 ``` r
-# remove.packages("DemoKin")
-# install.packages("devtools")
-devtools::install_github("IvanWilli/DemoKin", build_vignettes = TRUE)
-```
-
-Load packages:
-
-``` r
-library(DemoKin)
-library(dplyr)
-library(tidyr)
-library(purrr)
-library(ggplot2)
+library(tidyverse)
+library(httr)
 library(countrycode)
+library(data.table)
 library(knitr)
 ```
 
-Define a function to get necessary data from the UNWPP
+## 1.2. Functions
+
+Define a number of functions for getting data, re-arranging simulation
+data, and doing the analysis.
+
+<details>
+
+<summary><b>SHOW CODE</b></summary>
+
+<p>
 
 ``` r
-get_UNWPP_inputs <- function(countries, my_startyr, my_endyr, variant = "Median"){
-  
-  
-  print("Getting API ready...")
-  # Get data from UN using API
-  
-  base_url <- 'https://population.un.org/dataportalapi/api/v1'
-  
-  # First, identify which indicator codes we want to use
-  
-  target <- paste0(base_url,'/indicators/?format=csv')
-  codes <- read.csv(target, sep='|', skip=1) 
-  
-  qx_code <- codes$Id[codes$ShortName == "qx1"]
-  asfr_code <- codes$Id[codes$ShortName == "ASFR1"]
-  pop_code <- codes$Id[codes$ShortName == "PopByAge1AndSex"]
-  
-  # Get location codes
-  
-  target <- paste0(base_url, '/locations?sort=id&format=csv')
-  df_locations <- read.csv(target, sep='|', skip=1)
-  
-  # find the codes for countries
-  
-  my_location <- 
-    df_locations %>% 
-    filter( Name %in% countries) %>% 
-    pull(Id) %>% 
-    paste(collapse = ",")
-  
-  # Get px values
-  
-  print(paste0("Getting mortality data for ", paste(countries, collapse = ", ")))
-  
-  my_indicator <- qx_code
-  my_location  <- my_location
-  
-  target <- paste0(base_url,
-                   '/data/indicators/',my_indicator,
-                   '/locations/',my_location,
-                   '/start/',my_startyr,
-                   '/end/',my_endyr,
-                   '/?format=csv')
-  
-  px <- 
-    read.csv(target, sep='|', skip=1) %>% 
-    filter(Variant %in% variant) %>% 
-    filter(Sex == "Female") %>% 
-    mutate(px = 1- Value) %>% 
-    select(Location, Time = TimeLabel, age = AgeStart, px)
-  
-  # ASFR
-  
-  print(paste0("Getting fertility data for ", paste(countries, collapse = ", ")))
-  
-  my_indicator <- asfr_code
-  
-  target <- paste0(base_url,
-                   '/data/indicators/',my_indicator,
-                   '/locations/',my_location,
-                   '/start/',my_startyr,
-                   '/end/',my_endyr,
-                   '/?format=csv')
-  
-  asfr <- 
-    read.csv(target, sep='|', skip=1) %>% 
-    filter(Variant %in% variant) %>% 
-    select(Location, Time = TimeLabel, age = AgeStart, ASFR = Value)
-  
-  data <- 
-    px %>% 
-    left_join(asfr, by = c("Location", "Time", "age")) %>% 
-    mutate(ASFR = replace(ASFR,is.na(ASFR),0)) 
-  
-  data
+# a function to convert socsim months to calendar years
+asYr2 <- function(x, FinalSimYear, endmo) {
+  return(trunc(FinalSimYear - (endmo - x)/12) +1)
 }
 
-# To get UN population
+# Get data in dataveres
+list_data <- function(){
+  print("Getting API ready...")
+  
+  # 1. Get links to download simulation data from Harvard Dataverse 
+  # https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/SSZL6U
+  
+  # Get list of files from Datavsers
+  api_call <- "https://dataverse.harvard.edu/api/datasets/:persistentId?persistentId=doi:10.7910/DVN/SSZL6U"
+  
+  res <- GET(api_call)
+  strikes <- jsonlite::fromJSON(content(res, 'text'), simplifyVector = FALSE)
+  
+  data_list <- strikes$data$latestVersion$files
+  
+  data_df <- 
+    lapply(data_list, function(x) data.frame(x)) %>% 
+    bind_rows() %>% 
+    mutate(
+      country = str_extract(label, "[A-z]+")
+      , country = gsub("_", "", country)
+      , seed = str_extract(label, "[0-9]+")
+    ) %>% 
+    select(country, seed , label, id = dataFile.id)
+  
+  return(data_df)
+}
+
+find_grandparents <- function(countries, year, data_df, export = T){
+  
+  # Avoid unnecessary calculations by NOT running again analysis for countries
+  # that alrady have a saved csv file
+  if(export){
+    f <- list.files("Output", pattern = "gp_")
+    f <- gsub("gp_|.csv", "", f)
+    f <- gsub("_[0-9]+", "", f)
+    f <- gsub("_", "", f)
+    avoid <- countries[countries %in% f]
+    print(paste0("Note: skipping countries already in Output: ", paste(avoid, collapse = ", ")))
+    countries <- countries[!countries %in% f]
+    
+    if(!length(countries)){
+      return(cat("All countries processed!"))
+    }
+    
+  }
+  
+  file_api_base <- "https://dataverse.harvard.edu/api/access/datafile/"
+  
+  urls <- 
+    data_df %>% 
+    filter(country %in% countries) %>% 
+    # The first USA sim files is empty, skip it!
+    filter(!label %in% c("USA_200407")) %>% 
+    group_by(country) %>% 
+    slice(1:num_sims) %>% 
+    ungroup() %>% 
+    mutate(url = paste0(file_api_base, id)) %>% 
+    data.frame()
+  
+  # Get data
+  
+  print("Start estimations from microdata...")
+  
+  gp <- find_grandparents2(urls, year, export)
+  
+  if(!export){
+    return(gp)
+  }
+  
+}
+
+find_grandparents2 <- function(urls, year, export){
+  
+  gps_list <- 
+    lapply(1:nrow(urls), function(n, urls, year){
+      
+      u <- urls$url[n]
+      con <- urls$country[n]
+      se <- urls$seed[n]
+      lab <- urls$label[n]
+      
+      print(paste0("Loading data for ", lab))
+      
+      # Load data
+      load(url(u))
+      
+      # Convert months to years
+      opop <- 
+        sims$opop %>% 
+        mutate(
+          ego_birth_year = asYr2(dob, FinalSimYear, endmo)
+          , ego_death_year = asYr2(dod, FinalSimYear, endmo)
+        )
+      
+      print("Finding grandparents...")
+      out <- find_grandparents3(opop = opop, year = year)
+      out$country <- con
+      out$seed <- se
+      # out$year <- year
+      
+      out$share <- out$gp / out$pop 
+      out[is.na(out)] <- 0
+      
+      if(export){
+        print("Writing grandparent estiamtes to Output.")
+        write.csv(out, paste0("Output/gp_", lab, ".csv"))
+      } else {
+        return(out)
+      }
+      
+      closeAllConnections()
+      
+    }, urls = urls, year = year)
+  
+  gps_df <-
+    gps_list %>%
+    bind_rows()
+  
+  return(gps_df)
+  
+}
+
+# Function to identify share of the population that is a grandparent
+find_grandparents3 <- function(opop, year){
+  out_l <- 
+    lapply(year, function(y, opop){
+      print(paste0("Working on year ", y))
+    # Keep only people alive in given year
+    df_alive <- 
+      opop %>% 
+      filter(ego_birth_year <= y, ego_death_year > y) %>% 
+      mutate(ego_age_now = y - ego_birth_year)
+    
+    # find grandparents of these people
+    egos <- df_alive$pid
+    match_rows <- match(egos, opop$pid)
+    
+    gp_pp <- opop$pop[match(opop$pop[match_rows], opop$pid)]
+    gp_pm <- opop$pop[match(opop$mom[match_rows], opop$pid)]
+    gp_mm <- opop$mom[match(opop$mom[match_rows], opop$pid)]
+    gp_mp <- opop$mom[match(opop$pop[match_rows], opop$pid)]
+    
+    # ID of all grandparrents, doesn't matter if they're alive
+    gp <- unique(c(gp_pp, gp_pm, gp_mm, gp_mp))
+    
+    # ID of living grandpanrents in year 'year'
+    gp_alive <- gp[gp %in% egos]
+    
+    # Get number of grandpas by age
+    gp_pop <- 
+      df_alive[match(gp_alive, df_alive$pid), ] %>% 
+      count(age = ego_age_now, name = "gp")
+    
+    # Get age distribution of population in general
+    all_pop <- 
+      df_alive %>% 
+      count(age = ego_age_now, name = "pop")
+    
+    out <- 
+      all_pop %>%
+      left_join(gp_pop, by = c("age"))
+    
+    out$year <- y
+    
+    out
+  }, opop)
+  
+  out <- bind_rows(out_l)
+  out
+  
+}
+
+
+# Get population data from UNWPP
 get_unwpp_pop <- function(countries,  my_startyr = 2022, my_endyr = 2022){
   base_url <- 'https://population.un.org/dataportalapi/api/v1'
   
@@ -178,8 +294,8 @@ get_unwpp_pop <- function(countries,  my_startyr = 2022, my_endyr = 2022){
     
     my_indicator <- pop_code
     
-    times <- floor(length(locs)/10)
-    sp_vec <- rep(1:10, times)
+    times <- floor(length(locs)/20)
+    sp_vec <- rep(1:20, times)
     extras <- length(locs) - length(sp_vec)
     if(extras > 0) sp_vec <- c(sp_vec, 1:extras)
     
@@ -215,537 +331,267 @@ get_unwpp_pop <- function(countries,  my_startyr = 2022, my_endyr = 2022){
 }
 ```
 
-# 2\. Number of kin
+</p>
 
-Let’s get the numbers of China, Guatemala, and Germany:
+</details>
+
+# 2\. Example for one country: grandparents in Guatemala
+
+First, show how the estimation works for Guatemala as an example. Later
+on, I’ll scale this up for all world countries.
+
+Define parameters for analysis:
 
 ``` r
-# pick countries
-countries <- c("China", "Guatemala", "Germany")
+countries <- c("Guatemala")
+# How many simulations per country? max 5
+# Don't touch this
+num_sims <- 1
 
-# Year range
+years <- 2022
 
-my_startyr   <- 1950
-my_endyr     <- 2022
+# Don't touch this
+get_un_pop_from_api <- T
 
-data <- get_UNWPP_inputs(
-  countries = countries
-  , my_startyr = my_startyr
-  , my_endyr = my_endyr
-  )
+# To convert months to yeares in SOCSIM
+FinalSimYear <-  2200
+endmo <-  5400
+```
+
+Load the simulation data from the Harvard database
+
+``` r
+# Show simulations for which countries are available
+data_df <- list_data()
 ```
 
     ## [1] "Getting API ready..."
-    ## [1] "Getting mortality data for China, Guatemala, Germany"
-    ## [1] "Getting fertility data for China, Guatemala, Germany"
-
-Run kinship models for 2022 period:
 
 ``` r
-period_kin_temp <- 
-  data %>%
-  split(list(.$Location)) %>%
-  map_df(function(X){
-    print(unique(X$Location))
-    U <-
-      X %>%
-      select(Time, age, px) %>%
-      pivot_wider(names_from = Time, values_from = px) %>%
-      select(-age) %>% 
-      as.matrix()
-    f <- X %>%
-      select(Time, age, ASFR) %>%
-      mutate(ASFR = ASFR/1000) %>% 
-      pivot_wider(names_from = Time, values_from = ASFR) %>%
-      select(-age) %>% 
-      as.matrix()
-    kin(U, f, time_invariant = FALSE, output_kin = c("gm","gd"), output_period = 2022)$kin_summary %>%
-      mutate(Location = unique(X$Location),  .before = 1)
-  })
+all_countries <- unique(data_df$country)
+
+# Get country iso codes
+iso3_codes <- countrycode(countries, origin = "country.name", destination = "iso3c")
 ```
 
-    ## [1] "China"
-
-    ## Stable assumption was made for calculating pi on each year because no input data.
-
-    ## Warning: replacing previous import 'lifecycle::last_warnings' by
-    ## 'rlang::last_warnings' when loading 'hms'
-
-    ## Assuming stable population before 1950.
-
-    ## [1] "Germany"
-
-    ## Stable assumption was made for calculating pi on each year because no input data.
-
-    ## Assuming stable population before 1950.
-
-    ## [1] "Guatemala"
-
-    ## Stable assumption was made for calculating pi on each year because no input data.
-    ## Assuming stable population before 1950.
-
-The model is for female populations along matrilineal lines, but
-following Caswel (2022), we can use Keyfitz factors to multiply kin and
-obtain male and female kin accordingly. This is a good-enough
-approximation:
+Now, implement the analysis to see how many people have grandparents in
+the simulation
 
 ``` r
-period_kin <- 
-  period_kin_temp %>% 
-  select(Location, kin, year, age_focal, count_living) %>% 
-  mutate(
-    count_living = count_living*4
-    , kin = ifelse(kin == "gm", "grandparents", "grandchildren")
-    )
+gps_df <- find_grandparents(countries, years, data_df, export = F)
 ```
 
-# 3\. Average number of granpdarent/grandchildren
-
-Now we can visualise the expected number of grandchildren and
-grandparents for an average member of the population surviving to each
-age. For example, a Chinese woman aged 50 has on average, 0.72
-grandchildren and 0.08 living grandparents. Visually:
+    ## [1] "Start estimations from microdata..."
+    ## [1] "Loading data for Guatemala_296608"
+    ## [1] "Finding grandparents..."
+    ## [1] "Working on year 2022"
 
 ``` r
-period_kin %>% 
-  ggplot(aes(x = age_focal, y = count_living, color = Location)) +
-  geom_line(size = 2) + 
-  scale_x_continuous("Age of Focal (average member of the population)") +
-  scale_y_continuous("Average number of kin in 2022") +
-  facet_grid(~kin) + 
-  theme_bw() +
-  theme(legend.position = "bottom")
+# rename things
+gps <-  
+  gps_df %>% 
+  rename(sim_pop = pop, sim_gp = gp, sim_share = share) %>% 
+  mutate(iso3 = countrycode(country, origin = "country.name", destination = "iso3c")) %>% 
+  select(iso3, year, age, -country, everything())
+```
+
+Combine with UN population numbers to get an approximation of the number
+of grandparents in the real population.
+
+``` r
+# Get pop numbers from UN using API
+pop <- get_unwpp_pop(countries, my_startyr = years, my_endyr = years)
+```
+
+    ## [1] "Getting pop data for Guatemala"
+
+``` r
+# Aggregate by sex
+pop_un <- 
+    pop %>% 
+    arrange(iso3) %>% 
+    filter(sex == "Both sexes") %>% 
+    rename(pop_un = value) %>% 
+    select(-country, -sex)
+
+# Combine simulation estimates and UN population numbers to get estimated number of grandparents
+
+pop_gp_by_age <- 
+  gps %>% 
+  left_join(pop_un, by = c("iso3", "year", "age")) %>% 
+  mutate(number_grandparents = sim_share * pop_un) %>% 
+  select(iso3, year, age, number_grandparents, share_grandparents = sim_share, pop_un)
+```
+
+We can now visualise the number of grandparents over age and the ‘per
+capita’ number of grandparents over age (i.e., the share of the
+population aged `x` who are grandparents).
+
+``` r
+# Distribution of grandparents over age 
+
+pop_gp_by_age %>%
+  rename(`Grandparents per capita` = share_grandparents, `Number of grandparents` = number_grandparents) %>% 
+  select(-pop_un) %>% 
+  pivot_longer(-c(iso3, year, age)) %>% 
+  # mutate() %>% 
+  ggplot(aes(x = age, y = value)) +
+  geom_line() +
+  facet_wrap(.~name, scales = "free") +
+  labs(y = "") +
+  theme_bw()
 ```
 
 ![](README_files/figure-gfm/unnamed-chunk-7-1.png)<!-- -->
 
-As a table:
+Finally, let’s answer the question: how many grandparents are there in
+Guatemala in 2022, irrespective of how old the are?
 
 ``` r
-period_kin %>% 
-  mutate(count_living = round(count_living, 2)) %>% 
-  pivot_wider(names_from = kin, values_from = count_living) %>% 
-  select(-year) %>% 
+# Not by age, but for all ages combined
+  pop_gp_by_age %>%
+  group_by(iso3, year) %>%
+  summarise(
+    number_grandparents = sum(number_grandparents)
+    , pop_un = sum(pop_un)
+  ) %>%
+  ungroup() %>%
+  mutate(share_grandparents = number_grandparents/pop_un) %>%
+  mutate(
+    pop_un = pop_un/1e6
+    , number_grandparents = number_grandparents/1e6
+    ) %>% 
+  select(iso3, year, `Number of grandparents (millions)` = number_grandparents, `Total population (millions)` = pop_un, `Grandparents per capita` = share_grandparents) %>% 
   kable()
 ```
 
-| Location  | age\_focal | grandchildren | grandparents |
-| :-------- | ---------: | ------------: | -----------: |
-| China     |          0 |          0.00 |         3.78 |
-| China     |          1 |          0.00 |         3.76 |
-| China     |          2 |          0.00 |         3.74 |
-| China     |          3 |          0.00 |         3.71 |
-| China     |          4 |          0.00 |         3.69 |
-| China     |          5 |          0.00 |         3.66 |
-| China     |          6 |          0.00 |         3.63 |
-| China     |          7 |          0.00 |         3.61 |
-| China     |          8 |          0.00 |         3.57 |
-| China     |          9 |          0.00 |         3.53 |
-| China     |         10 |          0.00 |         3.48 |
-| China     |         11 |          0.00 |         3.43 |
-| China     |         12 |          0.00 |         3.38 |
-| China     |         13 |          0.00 |         3.33 |
-| China     |         14 |          0.00 |         3.28 |
-| China     |         15 |          0.00 |         3.24 |
-| China     |         16 |          0.00 |         3.18 |
-| China     |         17 |          0.00 |         3.11 |
-| China     |         18 |          0.00 |         3.03 |
-| China     |         19 |          0.00 |         2.94 |
-| China     |         20 |          0.00 |         2.85 |
-| China     |         21 |          0.00 |         2.78 |
-| China     |         22 |          0.00 |         2.68 |
-| China     |         23 |          0.00 |         2.59 |
-| China     |         24 |          0.00 |         2.50 |
-| China     |         25 |          0.00 |         2.41 |
-| China     |         26 |          0.00 |         2.31 |
-| China     |         27 |          0.00 |         2.18 |
-| China     |         28 |          0.00 |         2.09 |
-| China     |         29 |          0.00 |         1.99 |
-| China     |         30 |          0.00 |         1.89 |
-| China     |         31 |          0.00 |         1.70 |
-| China     |         32 |          0.00 |         1.54 |
-| China     |         33 |          0.00 |         1.41 |
-| China     |         34 |          0.00 |         1.29 |
-| China     |         35 |          0.00 |         1.17 |
-| China     |         36 |          0.00 |         1.05 |
-| China     |         37 |          0.00 |         0.93 |
-| China     |         38 |          0.00 |         0.81 |
-| China     |         39 |          0.01 |         0.70 |
-| China     |         40 |          0.01 |         0.58 |
-| China     |         41 |          0.02 |         0.48 |
-| China     |         42 |          0.03 |         0.39 |
-| China     |         43 |          0.05 |         0.32 |
-| China     |         44 |          0.08 |         0.27 |
-| China     |         45 |          0.13 |         0.22 |
-| China     |         46 |          0.19 |         0.18 |
-| China     |         47 |          0.27 |         0.15 |
-| China     |         48 |          0.39 |         0.12 |
-| China     |         49 |          0.53 |         0.10 |
-| China     |         50 |          0.72 |         0.08 |
-| China     |         51 |          0.91 |         0.06 |
-| China     |         52 |          1.12 |         0.05 |
-| China     |         53 |          1.33 |         0.04 |
-| China     |         54 |          1.57 |         0.03 |
-| China     |         55 |          1.83 |         0.02 |
-| China     |         56 |          2.07 |         0.01 |
-| China     |         57 |          2.29 |         0.01 |
-| China     |         58 |          2.48 |         0.01 |
-| China     |         59 |          2.65 |         0.00 |
-| China     |         60 |          2.80 |         0.00 |
-| China     |         61 |          2.93 |         0.00 |
-| China     |         62 |          3.05 |         0.00 |
-| China     |         63 |          3.17 |         0.00 |
-| China     |         64 |          3.27 |         0.00 |
-| China     |         65 |          3.38 |         0.00 |
-| China     |         66 |          3.49 |         0.00 |
-| China     |         67 |          3.63 |         0.00 |
-| China     |         68 |          3.80 |         0.00 |
-| China     |         69 |          4.00 |         0.00 |
-| China     |         70 |          4.24 |         0.00 |
-| China     |         71 |          4.50 |         0.00 |
-| China     |         72 |          4.79 |         0.00 |
-| China     |         73 |          5.10 |         0.00 |
-| China     |         74 |          5.45 |         0.00 |
-| China     |         75 |          5.79 |         0.00 |
-| China     |         76 |          6.16 |         0.00 |
-| China     |         77 |          6.47 |         0.00 |
-| China     |         78 |          6.78 |         0.00 |
-| China     |         79 |          7.04 |         0.00 |
-| China     |         80 |          7.25 |         0.00 |
-| China     |         81 |          7.40 |         0.00 |
-| China     |         82 |          7.55 |         0.00 |
-| China     |         83 |          7.69 |         0.00 |
-| China     |         84 |          7.85 |         0.00 |
-| China     |         85 |          8.03 |         0.00 |
-| China     |         86 |          8.23 |         0.00 |
-| China     |         87 |          8.44 |         0.00 |
-| China     |         88 |          8.64 |         0.00 |
-| China     |         89 |          8.83 |         0.00 |
-| China     |         90 |          8.99 |         0.00 |
-| China     |         91 |          9.15 |         0.00 |
-| China     |         92 |          9.29 |         0.00 |
-| China     |         93 |          9.45 |         0.00 |
-| China     |         94 |          9.61 |         0.00 |
-| China     |         95 |          9.80 |         0.00 |
-| China     |         96 |         10.02 |         0.00 |
-| China     |         97 |         10.26 |         0.00 |
-| China     |         98 |         10.53 |         0.00 |
-| China     |         99 |         10.81 |         0.00 |
-| China     |        100 |         11.10 |         0.00 |
-| Germany   |          0 |          0.00 |         3.78 |
-| Germany   |          1 |          0.00 |         3.76 |
-| Germany   |          2 |          0.00 |         3.74 |
-| Germany   |          3 |          0.00 |         3.72 |
-| Germany   |          4 |          0.00 |         3.69 |
-| Germany   |          5 |          0.00 |         3.67 |
-| Germany   |          6 |          0.00 |         3.64 |
-| Germany   |          7 |          0.00 |         3.61 |
-| Germany   |          8 |          0.00 |         3.58 |
-| Germany   |          9 |          0.00 |         3.55 |
-| Germany   |         10 |          0.00 |         3.51 |
-| Germany   |         11 |          0.00 |         3.48 |
-| Germany   |         12 |          0.00 |         3.44 |
-| Germany   |         13 |          0.00 |         3.39 |
-| Germany   |         14 |          0.00 |         3.35 |
-| Germany   |         15 |          0.00 |         3.30 |
-| Germany   |         16 |          0.00 |         3.25 |
-| Germany   |         17 |          0.00 |         3.20 |
-| Germany   |         18 |          0.00 |         3.14 |
-| Germany   |         19 |          0.00 |         3.08 |
-| Germany   |         20 |          0.00 |         3.02 |
-| Germany   |         21 |          0.00 |         2.94 |
-| Germany   |         22 |          0.00 |         2.85 |
-| Germany   |         23 |          0.00 |         2.76 |
-| Germany   |         24 |          0.00 |         2.67 |
-| Germany   |         25 |          0.00 |         2.58 |
-| Germany   |         26 |          0.00 |         2.47 |
-| Germany   |         27 |          0.00 |         2.37 |
-| Germany   |         28 |          0.00 |         2.27 |
-| Germany   |         29 |          0.00 |         2.17 |
-| Germany   |         30 |          0.00 |         2.07 |
-| Germany   |         31 |          0.00 |         1.98 |
-| Germany   |         32 |          0.00 |         1.85 |
-| Germany   |         33 |          0.00 |         1.75 |
-| Germany   |         34 |          0.00 |         1.62 |
-| Germany   |         35 |          0.00 |         1.51 |
-| Germany   |         36 |          0.00 |         1.39 |
-| Germany   |         37 |          0.00 |         1.28 |
-| Germany   |         38 |          0.00 |         1.18 |
-| Germany   |         39 |          0.00 |         1.07 |
-| Germany   |         40 |          0.01 |         0.96 |
-| Germany   |         41 |          0.01 |         0.86 |
-| Germany   |         42 |          0.01 |         0.75 |
-| Germany   |         43 |          0.02 |         0.66 |
-| Germany   |         44 |          0.03 |         0.57 |
-| Germany   |         45 |          0.04 |         0.49 |
-| Germany   |         46 |          0.06 |         0.41 |
-| Germany   |         47 |          0.09 |         0.35 |
-| Germany   |         48 |          0.12 |         0.29 |
-| Germany   |         49 |          0.16 |         0.25 |
-| Germany   |         50 |          0.20 |         0.20 |
-| Germany   |         51 |          0.26 |         0.16 |
-| Germany   |         52 |          0.33 |         0.12 |
-| Germany   |         53 |          0.40 |         0.09 |
-| Germany   |         54 |          0.49 |         0.06 |
-| Germany   |         55 |          0.60 |         0.05 |
-| Germany   |         56 |          0.73 |         0.03 |
-| Germany   |         57 |          0.88 |         0.02 |
-| Germany   |         58 |          1.04 |         0.01 |
-| Germany   |         59 |          1.20 |         0.01 |
-| Germany   |         60 |          1.37 |         0.01 |
-| Germany   |         61 |          1.53 |         0.00 |
-| Germany   |         62 |          1.68 |         0.00 |
-| Germany   |         63 |          1.80 |         0.00 |
-| Germany   |         64 |          1.91 |         0.00 |
-| Germany   |         65 |          2.01 |         0.00 |
-| Germany   |         66 |          2.11 |         0.00 |
-| Germany   |         67 |          2.17 |         0.00 |
-| Germany   |         68 |          2.23 |         0.00 |
-| Germany   |         69 |          2.30 |         0.00 |
-| Germany   |         70 |          2.34 |         0.00 |
-| Germany   |         71 |          2.39 |         0.00 |
-| Germany   |         72 |          2.43 |         0.00 |
-| Germany   |         73 |          2.45 |         0.00 |
-| Germany   |         74 |          2.47 |         0.00 |
-| Germany   |         75 |          2.49 |         0.00 |
-| Germany   |         76 |          2.51 |         0.00 |
-| Germany   |         77 |          2.52 |         0.00 |
-| Germany   |         78 |          2.56 |         0.00 |
-| Germany   |         79 |          2.62 |         0.00 |
-| Germany   |         80 |          2.70 |         0.00 |
-| Germany   |         81 |          2.79 |         0.00 |
-| Germany   |         82 |          2.87 |         0.00 |
-| Germany   |         83 |          2.94 |         0.00 |
-| Germany   |         84 |          3.00 |         0.00 |
-| Germany   |         85 |          3.06 |         0.00 |
-| Germany   |         86 |          3.12 |         0.00 |
-| Germany   |         87 |          3.19 |         0.00 |
-| Germany   |         88 |          3.25 |         0.00 |
-| Germany   |         89 |          3.26 |         0.00 |
-| Germany   |         90 |          3.24 |         0.00 |
-| Germany   |         91 |          3.19 |         0.00 |
-| Germany   |         92 |          3.16 |         0.00 |
-| Germany   |         93 |          3.15 |         0.00 |
-| Germany   |         94 |          3.14 |         0.00 |
-| Germany   |         95 |          3.14 |         0.00 |
-| Germany   |         96 |          3.13 |         0.00 |
-| Germany   |         97 |          3.14 |         0.00 |
-| Germany   |         98 |          3.17 |         0.00 |
-| Germany   |         99 |          3.18 |         0.00 |
-| Germany   |        100 |          3.18 |         0.00 |
-| Guatemala |          0 |          0.00 |         3.55 |
-| Guatemala |          1 |          0.00 |         3.51 |
-| Guatemala |          2 |          0.00 |         3.47 |
-| Guatemala |          3 |          0.00 |         3.43 |
-| Guatemala |          4 |          0.00 |         3.39 |
-| Guatemala |          5 |          0.00 |         3.34 |
-| Guatemala |          6 |          0.00 |         3.29 |
-| Guatemala |          7 |          0.00 |         3.23 |
-| Guatemala |          8 |          0.00 |         3.17 |
-| Guatemala |          9 |          0.00 |         3.13 |
-| Guatemala |         10 |          0.00 |         3.07 |
-| Guatemala |         11 |          0.00 |         3.01 |
-| Guatemala |         12 |          0.00 |         2.94 |
-| Guatemala |         13 |          0.00 |         2.87 |
-| Guatemala |         14 |          0.00 |         2.80 |
-| Guatemala |         15 |          0.00 |         2.71 |
-| Guatemala |         16 |          0.00 |         2.64 |
-| Guatemala |         17 |          0.00 |         2.57 |
-| Guatemala |         18 |          0.00 |         2.51 |
-| Guatemala |         19 |          0.00 |         2.45 |
-| Guatemala |         20 |          0.00 |         2.37 |
-| Guatemala |         21 |          0.00 |         2.28 |
-| Guatemala |         22 |          0.00 |         2.18 |
-| Guatemala |         23 |          0.00 |         2.11 |
-| Guatemala |         24 |          0.00 |         2.01 |
-| Guatemala |         25 |          0.00 |         1.92 |
-| Guatemala |         26 |          0.00 |         1.84 |
-| Guatemala |         27 |          0.00 |         1.74 |
-| Guatemala |         28 |          0.00 |         1.65 |
-| Guatemala |         29 |          0.00 |         1.57 |
-| Guatemala |         30 |          0.00 |         1.47 |
-| Guatemala |         31 |          0.00 |         1.38 |
-| Guatemala |         32 |          0.00 |         1.29 |
-| Guatemala |         33 |          0.00 |         1.21 |
-| Guatemala |         34 |          0.01 |         1.11 |
-| Guatemala |         35 |          0.03 |         1.03 |
-| Guatemala |         36 |          0.05 |         0.95 |
-| Guatemala |         37 |          0.10 |         0.87 |
-| Guatemala |         38 |          0.16 |         0.81 |
-| Guatemala |         39 |          0.24 |         0.74 |
-| Guatemala |         40 |          0.35 |         0.67 |
-| Guatemala |         41 |          0.49 |         0.61 |
-| Guatemala |         42 |          0.66 |         0.54 |
-| Guatemala |         43 |          0.85 |         0.48 |
-| Guatemala |         44 |          1.07 |         0.42 |
-| Guatemala |         45 |          1.32 |         0.37 |
-| Guatemala |         46 |          1.60 |         0.32 |
-| Guatemala |         47 |          1.93 |         0.28 |
-| Guatemala |         48 |          2.28 |         0.24 |
-| Guatemala |         49 |          2.67 |         0.20 |
-| Guatemala |         50 |          3.08 |         0.17 |
-| Guatemala |         51 |          3.50 |         0.14 |
-| Guatemala |         52 |          3.94 |         0.12 |
-| Guatemala |         53 |          4.41 |         0.10 |
-| Guatemala |         54 |          4.93 |         0.08 |
-| Guatemala |         55 |          5.51 |         0.06 |
-| Guatemala |         56 |          6.14 |         0.05 |
-| Guatemala |         57 |          6.83 |         0.04 |
-| Guatemala |         58 |          7.56 |         0.03 |
-| Guatemala |         59 |          8.31 |         0.02 |
-| Guatemala |         60 |          9.04 |         0.02 |
-| Guatemala |         61 |          9.73 |         0.01 |
-| Guatemala |         62 |         10.36 |         0.01 |
-| Guatemala |         63 |         10.91 |         0.01 |
-| Guatemala |         64 |         11.38 |         0.00 |
-| Guatemala |         65 |         11.80 |         0.00 |
-| Guatemala |         66 |         12.24 |         0.00 |
-| Guatemala |         67 |         12.75 |         0.00 |
-| Guatemala |         68 |         13.37 |         0.00 |
-| Guatemala |         69 |         14.13 |         0.00 |
-| Guatemala |         70 |         14.99 |         0.00 |
-| Guatemala |         71 |         15.89 |         0.00 |
-| Guatemala |         72 |         16.75 |         0.00 |
-| Guatemala |         73 |         17.53 |         0.00 |
-| Guatemala |         74 |         18.19 |         0.00 |
-| Guatemala |         75 |         18.71 |         0.00 |
-| Guatemala |         76 |         19.14 |         0.00 |
-| Guatemala |         77 |         19.50 |         0.00 |
-| Guatemala |         78 |         19.84 |         0.00 |
-| Guatemala |         79 |         20.19 |         0.00 |
-| Guatemala |         80 |         20.55 |         0.00 |
-| Guatemala |         81 |         20.89 |         0.00 |
-| Guatemala |         82 |         21.16 |         0.00 |
-| Guatemala |         83 |         21.36 |         0.00 |
-| Guatemala |         84 |         21.49 |         0.00 |
-| Guatemala |         85 |         21.58 |         0.00 |
-| Guatemala |         86 |         21.69 |         0.00 |
-| Guatemala |         87 |         21.83 |         0.00 |
-| Guatemala |         88 |         22.01 |         0.00 |
-| Guatemala |         89 |         22.20 |         0.00 |
-| Guatemala |         90 |         22.35 |         0.00 |
-| Guatemala |         91 |         22.41 |         0.00 |
-| Guatemala |         92 |         22.39 |         0.00 |
-| Guatemala |         93 |         22.29 |         0.00 |
-| Guatemala |         94 |         22.17 |         0.00 |
-| Guatemala |         95 |         22.03 |         0.00 |
-| Guatemala |         96 |         21.91 |         0.00 |
-| Guatemala |         97 |         21.81 |         0.00 |
-| Guatemala |         98 |         21.74 |         0.00 |
-| Guatemala |         99 |         21.67 |         0.00 |
-| Guatemala |        100 |         21.58 |         0.00 |
+    ## `summarise()` has grouped output by 'iso3'. You can override using the `.groups`
+    ## argument.
 
-# 4\. Age differences between grandparents and granchildren
+| iso3 | year | Number of grandparents (millions) | Total population (millions) | Grandparents per capita |
+| :--- | ---: | --------------------------------: | --------------------------: | ----------------------: |
+| GTM  | 2022 |                          2.882572 |                     17.8421 |               0.1615601 |
 
-We can plot the age difference between members of the population and
-their grandparents and grandchildren, in this case for 2022, but it’s
-also possible to look at other years.
+# 3\. Replicate for all countries
+
+We do the same thing, but scaling it up to all countries present in the
+UNWPP data (<https://population.un.org/wpp/>).
+
+For this, we won’t use the UN API to get the population data because
+it’s not very efficient.
 
 ``` r
-age_diff <- 
-  period_kin_temp %>% 
-  group_by(Location, year, kin) %>%
-  mutate(age_diff = age_focal - mean_age) %>% 
-  ungroup() %>% 
-  select(Location, age_focal, kin, age_diff)
+# 1. Preamble
 
-age_diff %>% 
-  rename_kin() %>% 
-  ggplot(aes(x = age_focal, y = age_diff, colour = Location)) +
-  geom_line() +
-  scale_y_continuous("Age difference between Focal and kin in 2022") +
-  facet_grid(~kin) +
-  theme_bw()
-```
+countries <- c("all")
+# How many simulations per country? max 5
+# Don't touch this
+num_sims <- 1
 
-    ## Warning: Removed 186 row(s) containing missing values (geom_path).
+years <- seq(1990, 2040, 5)
 
-![](README_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
+# Don't touch this
+get_un_pop_from_api <- F
 
-# 5\. Number of grandparentes in a population
+# To convert months to yeares in SOCSIM
+# 20200414 This should work for new estimates up to 2200
+FinalSimYear <-  2200
+endmo <-  5400
 
-The intuition here is that if Focal has 2 maternal grandmothers (since
-we are operating in a female matrilineal population). So, if we use GKP
-factors, we can approximate the number of grandparents as `g(x) =
-gm(x)*4`. (Caswell 2022). In a given population, around 4 people will
-share a grandparent. So, an approximation of the number of grandparents
-would be a factor of the population `p(x)` by `g(x)/4`.
+# 2. Locate grandparents in simulaions -----------
 
-``` r
-# Get UN population
-# World population in 2022
-pop <- 
-  get_unwpp_pop(countries, my_startyr = 2022, my_endyr = 2022) %>% 
-  filter(sex == "Both sexes") %>%
-  # filter(sex == "Female") %>%
-  rename(pop_un = value)
-```
+data_df <- list_data()
+all_countries <- unique(data_df$country)
 
-    ## [1] "Getting pop data for China, Guatemala, Germany"
+# Get all countries 
+print("Getting data for all UN countries.")
+# Remove regions, etc. 
+countries_df <- 
+    data_df %>% 
+    filter(!country %in% c("Chinaanddependencies", "ChinaMacaoSAR")) %>% 
+    mutate(iso3 = countrycode(country, origin = "country.name", destination = "iso3c")) %>% 
+    filter(!is.na(iso3))
+  
+countries <- unique(countries_df$country)
 
-``` r
-pp <- 
-  period_kin %>% 
-  rename(age = age_focal) %>% 
-  mutate(iso3 = countrycode(Location, origin = "country.name", destination = "iso3c")) %>% 
-  pivot_wider(names_from = kin, values_from = count_living) %>% 
-  left_join(pop, by = c("iso3", "year", "age"))
+# Get country iso codes
+iso3_codes <- countrycode(countries, origin = "country.name", destination = "iso3c")
 
-# Option 1: assume 4 granchildren
+find_grandparents(countries, years, data_df, export = T)
 
-# num_gp1 <- 
-#   pp %>% 
-#   mutate(
-#     number_grandparents = pop_un*grandparents/4
-#     , number_grandparents = ifelse(is.infinite(number_grandparents), 0, number_grandparents)
-#     , share_grandparents = grandparents/4
-#     # same as
-#     # , share_grandparents = number_grandparents/pop_un
-#     ) 
+# Read gp data from disk
 
-# OPTION 2: get number of granchildren from average age of grandparents
-# get mean number of grandchildren at each age
-mean_gc <-
-  period_kin_temp %>% 
-  filter(kin == "gm") %>% 
-  select(Location, year, age_focal, mean_age) %>% 
-  mutate(
-    mean_age = round(age_focal + mean_age, 0)
-    , mean_age = ifelse(mean_age > 100 | is.na(mean_age), 100, mean_age)
-    ) %>% 
-  rename(age_gc = age_focal) %>% 
-  left_join(
-    period_kin_temp %>% 
-      filter(kin == "gd") %>% 
-      # To include male granchildren
+f <- list.files("Output", pattern = "gp_", full.names = T)
+
+gps <- 
+  lapply(f, read.csv) %>% 
+  bind_rows() %>% 
+  select(-X) %>% 
+  rename(sim_pop = pop, sim_gp = gp, sim_share = share) %>% 
+  mutate(iso3 = countrycode(country, origin = "country.name", destination = "iso3c")) %>% 
+  select(iso3, year, age, -country, everything())
+
+# 3. Multiply by population numbers --------------
+
+# Get pop numbers from UN
+if(!file.exists("Data/un_pop_full.csv")){
+    # If this doesn't work, you may need to download the data from
+    # https://population.un.org/wpp/Download/Files/1_Indicators%20(Standard)/CSV_FILES/WPP2022_Population1JanuaryBySingleAgeSex_Medium_1950-2021.zip
+    # https://population.un.org/wpp/Download/Files/1_Indicators%20(Standard)/CSV_FILES/WPP2022_Population1JanuaryBySingleAgeSex_Medium_2022-2100.zip
+  
+  # Download UN data and unzip
+
+  # Estimates and historical data
+  
+  # download.file("https://population.un.org/wpp/Download/Files/1_Indicators%20(Standard)/CSV_FILES/WPP2022_Population1JanuaryBySingleAgeSex_Medium_1950-2021.zip", "Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_1950-2021.zip")
+  
+  unzip("Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_1950-2021.zip", exdir = "Data")
+  
+  file.remove("Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_1950-2021.zip")
+  
+  # Projections
+  
+    # download.file("https://population.un.org/wpp/Download/Files/1_Indicators%20(Standard)/CSV_FILES/WPP2022_Population1JanuaryBySingleAgeSex_Medium_2022-2100.zip", "Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_2022-2100.zip")
+  
+  unzip("Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_2022-2100.zip", exdir = "Data")
+  
+  file.remove("Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_2022-2100.zip")
+
+    pop <- 
+      fread("Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_1950-2021.csv") %>% 
+      bind_rows(fread("Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_2022-2100.csv")) %>% 
+      filter(LocTypeName == "Country/Area", Variant == "Medium") %>% 
+      select(iso3 = ISO3_code, year = Time, age = AgeGrp, pop_un = PopTotal) %>% 
       mutate(
-        count_living = count_living*4
-        # Since focal is included in the count, substract 1??
-        # , count_living = count_living - 1
-        ) %>% 
-      select(Location, year, age_focal, number_gc = count_living)
-    , by = c("Location", "year", "mean_age" = 'age_focal')
-  ) %>% 
-    rename(age_gp = mean_age) %>% 
-    arrange(Location, year, age_gp) %>% 
-  mutate(iso3 = countrycode(Location, origin = "country.name", destination = "iso3c")) %>% 
-  select(-Location, - age_gp)
+        age = as.numeric(ifelse(age == "100+", 100, age))
+        , pop_un = pop_un*1000
+        )
+    
+    fwrite(pop, "Data/un_pop_full.csv", row.names = F)
+  } else {
+  pop <- read.csv("Data/un_pop_full.csv", stringsAsFactors = F)  
+  }
 
+  pop_un <- 
+    pop %>% 
+    # Keep only relevant years and countries
+    filter(year %in% years) %>% 
+    filter(iso3 %in% iso3_codes)
 
-num_gp <-
-  pp %>% 
-  left_join(mean_gc, by = c("iso3", "year", "age" = "age_gc")) %>% 
-    mutate(
-    number_grandparents = pop_un*grandparents/number_gc
-    , number_grandparents = ifelse(is.infinite(number_grandparents), 0, number_grandparents)
-    , share_grandparents = number_grandparents/pop_un
-    ) 
+# 4. Rough estimate of number of grandparents -------
 
+# 4.1. By country ============
 
-# Sum over all ages 
+pop_gp_by_age <- 
+  gps %>% 
+  left_join(pop_un, by = c("iso3", "year", "age")) %>% 
+  arrange(iso3) %>% 
+  mutate(number_grandparents = sim_share * pop_un) %>% 
+  select(iso3, year, age, number_grandparents, share_grandparents = sim_share, pop_un)
 
-num_gp_sum <- 
-  num_gp %>% 
+# Not by age, but for all ages combined
+pop_gp <-
+  pop_gp_by_age %>%
   group_by(iso3, year) %>%
   summarise(
     number_grandparents = sum(number_grandparents)
@@ -754,88 +600,64 @@ num_gp_sum <-
   ungroup() %>%
   mutate(share_grandparents = number_grandparents/pop_un) %>%
   select(iso3, year, number_grandparents, share_grandparents, pop_un)
+
+# For the whole world
+pop_gp_world <-
+  pop_gp %>%
+  group_by(year) %>%
+  summarise(
+    number_grandparents = sum(number_grandparents)
+    , pop_un = sum(pop_un)
+  ) %>%
+  ungroup() %>%
+  mutate(share_grandparents = number_grandparents/pop_un)
+
+# 5. Export 
+write.csv(pop_gp_by_age, "Output/grandparents_by_country_age.csv", row.names = F)
+write.csv(pop_gp, "Output/grandparents_by_country.csv", row.names = F)
+write.csv(pop_gp_world, "Output/grandparents_world.csv", row.names = F)
 ```
 
-    ## `summarise()` has grouped output by 'iso3'. You can override using the `.groups`
-    ## argument.
+## Session info
 
 ``` r
-num_gp_sum %>% 
-  pivot_longer(number_grandparents:share_grandparents) %>% 
-  ggplot(aes(y = iso3, x = value)) +
-  geom_col(position = position_dodge()) +
-  facet_wrap(~name, scale = "free") +
-  theme_bw() +
-  theme(legend.position = "bottom") +
-  theme(axis.text.y = element_text(angle = 30))
+sessionInfo()
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
-
-Print
-
-``` r
-print(num_gp_sum)
-```
-
-    ## # A tibble: 3 x 5
-    ##   iso3   year number_grandparents share_grandparents     pop_un
-    ##   <chr> <int>               <dbl>              <dbl>      <int>
-    ## 1 CHN    2022          348632643.              0.245 1425887358
-    ## 2 DEU    2022           39553312.              0.474   83369866
-    ## 3 GTM    2022            2548301.              0.143   17843934
-
-Quality check: plot against number of 65+
-
-``` r
-pop_65 <- 
-  pop %>% 
-  filter(age >= 65) %>% 
-  group_by(iso3, year) %>% 
-  summarise(pop_un = sum(pop_un)) %>% 
-  ungroup()
-```
-
-    ## `summarise()` has grouped output by 'iso3'. You can override using the `.groups`
-    ## argument.
-
-``` r
-num_gp_sum %>% 
-  select(iso3, year, number_grandparents) %>% 
-  left_join(pop_65, by = c("iso3", "year")) %>% 
-  ggplot(aes(x = number_grandparents, y = pop_un, group = iso3)) +
-  geom_point() +
-  geom_label(aes(label = iso3)) +
-  geom_abline(slope = 1) +
-  scale_x_log10("Number of grandparents") +
-  scale_y_log10("Number of 65+") +
-  coord_equal() +
-  theme_bw()
-```
-
-![](README_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
-
-While this sort of makes sense, the values are considerably higher than
-what we would get if we use simulations.
-
-# References
-
-<div id="refs" class="references">
-
-<div id="ref-caswell_formal_2022">
-
-Caswell, Hal. 2022. “The Formal Demography of Kinship IV: Two-Sex Models
-and Their Approximations.” *Demographic Research* 47 (September):
-359–96. <https://doi.org/10.4054/DemRes.2022.47.13>.
-
-</div>
-
-<div id="ref-caswell_formal_2021">
-
-Caswell, Hal, and Xi Song. 2021. “The Formal Demography of Kinship. III.
-Kinship Dynamics with Time-Varying Demographic Rates.” *Demographic
-Research* 45: 517–46.
-
-</div>
-
-</div>
+    ## R version 4.0.2 (2020-06-22)
+    ## Platform: x86_64-w64-mingw32/x64 (64-bit)
+    ## Running under: Windows 10 x64 (build 19044)
+    ## 
+    ## Matrix products: default
+    ## 
+    ## locale:
+    ## [1] LC_COLLATE=English_United Kingdom.1252 
+    ## [2] LC_CTYPE=English_United Kingdom.1252   
+    ## [3] LC_MONETARY=English_United Kingdom.1252
+    ## [4] LC_NUMERIC=C                           
+    ## [5] LC_TIME=English_United Kingdom.1252    
+    ## 
+    ## attached base packages:
+    ## [1] stats     graphics  grDevices utils     datasets  methods   base     
+    ## 
+    ## other attached packages:
+    ##  [1] knitr_1.31        data.table_1.14.0 countrycode_1.2.0 httr_1.4.2       
+    ##  [5] forcats_0.5.1     stringr_1.4.0     dplyr_1.0.5       purrr_0.3.4      
+    ##  [9] readr_1.4.0       tidyr_1.1.3       tibble_3.1.0      ggplot2_3.3.3    
+    ## [13] tidyverse_1.3.0  
+    ## 
+    ## loaded via a namespace (and not attached):
+    ##  [1] tidyselect_1.1.0 xfun_0.21        haven_2.3.1      colorspace_2.0-0
+    ##  [5] vctrs_0.4.1      generics_0.1.0   htmltools_0.5.2  yaml_2.2.1      
+    ##  [9] utf8_1.2.1       rlang_1.0.2      pillar_1.5.1     withr_2.5.0     
+    ## [13] glue_1.6.2       DBI_1.1.1        dbplyr_2.1.0     modelr_0.1.8    
+    ## [17] readxl_1.3.1     lifecycle_1.0.0  munsell_0.5.0    gtable_0.3.0    
+    ## [21] cellranger_1.1.0 rvest_1.0.0      evaluate_0.17    labeling_0.4.2  
+    ## [25] fastmap_1.1.0    curl_4.3         fansi_0.4.2      highr_0.8       
+    ## [29] broom_0.7.5      Rcpp_1.0.7       backports_1.2.1  scales_1.1.1    
+    ## [33] jsonlite_1.7.2   farver_2.1.0     fs_1.5.0         hms_1.0.0       
+    ## [37] digest_0.6.28    stringi_1.5.3    grid_4.0.2       cli_3.2.0       
+    ## [41] tools_4.0.2      magrittr_2.0.1   crayon_1.4.1     pkgconfig_2.0.3 
+    ## [45] ellipsis_0.3.2   xml2_1.3.2       reprex_1.0.0     lubridate_1.7.10
+    ## [49] assertthat_0.2.1 rmarkdown_2.7    rstudioapi_0.13  R6_2.5.0        
+    ## [53] compiler_4.0.2

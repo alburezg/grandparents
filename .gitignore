@@ -1,6 +1,9 @@
 # History files
-temp
+temp/
 WPP2022_*
+
+Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_1950-2021.csv
+Data/Data/WPP2022_Population1JanuaryBySingleAgeSex_Medium_2022-2100.csv
 
 .Rhistory
 .Rapp.history
