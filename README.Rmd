@@ -67,7 +67,7 @@ list_data <- function(){
   # 1. Get links to download simulation data from Harvard Dataverse 
   # https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/SSZL6U
   
-  # Get list of files from Datavsers
+  # Get list of files from Dataverse
   api_call <- "https://dataverse.harvard.edu/api/datasets/:persistentId?persistentId=doi:10.7910/DVN/SSZL6U"
   
   res <- GET(api_call)
@@ -91,7 +91,7 @@ list_data <- function(){
 find_grandparents <- function(countries, year, data_df, export = T){
   
   # Avoid unnecessary calculations by NOT running again analysis for countries
-  # that alrady have a saved csv file
+  # that already have a saved csv file
   if(export){
     f <- list.files("Output", pattern = "gp_")
     f <- gsub("gp_|.csv", "", f)
@@ -121,7 +121,6 @@ find_grandparents <- function(countries, year, data_df, export = T){
     data.frame()
   
   # Get data
-  
   print("Start estimations from microdata...")
   
   gp <- find_grandparents2(urls, year, export)
@@ -165,7 +164,7 @@ find_grandparents2 <- function(urls, year, export){
       out[is.na(out)] <- 0
       
       if(export){
-        print("Writing grandparent estiamtes to Output.")
+        print("Writing grandparent estimates to Output.")
         write.csv(out, paste0("Output/gp_", lab, ".csv"))
       } else {
         return(out)
@@ -203,10 +202,10 @@ find_grandparents3 <- function(opop, year){
     gp_mm <- opop$mom[match(opop$mom[match_rows], opop$pid)]
     gp_mp <- opop$mom[match(opop$pop[match_rows], opop$pid)]
     
-    # ID of all grandparrents, doesn't matter if they're alive
+    # ID of all grandparents, doesn't matter if they're alive
     gp <- unique(c(gp_pp, gp_pm, gp_mm, gp_mp))
     
-    # ID of living grandpanrents in year 'year'
+    # ID of living grandparents in year 'year'
     gp_alive <- gp[gp %in% egos]
     
     # Get number of grandpas by age
@@ -239,14 +238,12 @@ get_unwpp_pop <- function(countries,  my_startyr = 2022, my_endyr = 2022){
   base_url <- 'https://population.un.org/dataportalapi/api/v1'
   
   # First, identify which indicator codes we want to use
-  
   target <- paste0(base_url,'/indicators/?format=csv')
   codes <- read.csv(target, sep='|', skip=1) 
   
   pop_code <- codes$Id[codes$ShortName == "PopByAge1AndSex"]
   
   # Get location codes
-  
   target <- paste0(base_url, '/locations?sort=id&format=csv')
   df_locations <- read.csv(target, sep='|', skip=1)
   
@@ -343,7 +340,7 @@ years <- 2022
 # Don't touch this
 get_un_pop_from_api <- T
 
-# To convert months to yeares in SOCSIM
+# To convert months to years in SOCSIM
 FinalSimYear <-  2200
 endmo <-  5400
 ```
@@ -355,7 +352,7 @@ Load the simulation data from the Harvard database
 data_df <- list_data()
 all_countries <- unique(data_df$country)
 
-# Get country iso codes
+# Get country iso3c codes
 iso3_codes <- countrycode(countries, origin = "country.name", destination = "iso3c")
 
 ```
@@ -388,7 +385,6 @@ pop_un <-
     select(-country, -sex)
 
 # Combine simulation estimates and UN population numbers to get estimated number of grandparents
-
 pop_gp_by_age <- 
   gps %>% 
   left_join(pop_un, by = c("iso3", "year", "age")) %>% 
@@ -401,7 +397,6 @@ We can now visualise the number of grandparents over age and the 'per capita' nu
 
 ```{r}
 # Distribution of grandparents over age 
-
 pop_gp_by_age %>%
   rename(`Grandparents per capita` = share_grandparents, `Number of grandparents` = number_grandparents) %>% 
   select(-pop_un) %>% 
@@ -441,24 +436,23 @@ We do the same thing, but scaling it up to all countries present in the UNWPP da
 Note that running the code chunk below is likely to take a couple of hours and requires constantly downloading data from the Harvard Dataverse and writing outputs to the disk. The final estimates are stored in the [Output](Output) directory, at the country level (by age and for all ages combined) and for the entire world. Estimates for 1990-2020 rely on UNWPP 'historical' data, whereas estimates for 2025-2040 come from UNWPP projections (medium scenario). 
 
 ```{r, eval=FALSE}
-# 1. Preamble
-
+# 1. Preamble -----------
 countries <- c("all")
 # How many simulations per country? max 5
 # Don't touch this
 num_sims <- 1
 
-years <- seq(1990, 2040, 5)
+years <- sort(c(seq(1960, 2050, 5), 2022))
 
 # Don't touch this
 get_un_pop_from_api <- F
 
-# To convert months to yeares in SOCSIM
+# To convert months to years in SOCSIM
 # 20200414 This should work for new estimates up to 2200
 FinalSimYear <-  2200
 endmo <-  5400
 
-# 2. Locate grandparents in simulaions -----------
+# 2. Locate grandparents in simulations -----------
 
 data_df <- list_data()
 all_countries <- unique(data_df$country)
@@ -480,7 +474,6 @@ iso3_codes <- countrycode(countries, origin = "country.name", destination = "iso
 find_grandparents(countries, years, data_df, export = T)
 
 # Read gp data from disk
-
 f <- list.files("Output", pattern = "gp_", full.names = T)
 
 gps <- 
