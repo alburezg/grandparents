@@ -42,5 +42,146 @@ head(res[order(res$mean_grandparent_age), ])
 
 # "A typical Mexican grandparent has only xx grandkids."
 
-# " ."
+# Use DemoKin to get average number of grandchildren for a 'typical' grandparent. 
+# Let's take 'typical' to mean a grandparent aged 'x', where 'x' is the mean age
+# of all grandparents in a population, as estimated by Sondre from the simulations. 
 
+# We use DemoKin to avoid having to re-read the simulations and because it's a cleaner
+# mathematical implementation: https://github.com/IvanWilli/DemoKin.
+
+# devtools::install_github("IvanWilli/DemoKin", build_vignettes = TRUE)
+library(DemoKin)
+library(countrycode)
+
+# Download data from UNWPP for kinship models
+get_UNWPP_inputs_DemoKin <- function(countries, my_startyr, my_endyr, variant = "Median"){
+  
+  
+  print("Getting API ready...")
+  # Get data from UN using API
+  
+  base_url <- 'https://population.un.org/dataportalapi/api/v1'
+  
+  # First, identify which indicator codes we want to use
+  
+  target <- paste0(base_url,'/indicators/?format=csv')
+  codes <- read.csv(target, sep='|', skip=1) 
+  
+  qx_code <- codes$Id[codes$ShortName == "qx1"]
+  asfr_code <- codes$Id[codes$ShortName == "ASFR1"]
+  pop_code <- codes$Id[codes$ShortName == "PopByAge1AndSex"]
+  
+  # Get location codes
+  
+  target <- paste0(base_url, '/locations?sort=id&format=csv')
+  df_locations <- read.csv(target, sep='|', skip=1)
+  
+  # find the codes for countries
+  
+  my_location <- 
+    df_locations %>% 
+    filter( Name %in% countries) %>% 
+    pull(Id) %>% 
+    paste(collapse = ",")
+  
+  # Get px values
+  
+  print(paste0("Getting mortality data for ", paste(countries, collapse = ", ")))
+  
+  my_indicator <- qx_code
+  my_location  <- my_location
+  
+  target <- paste0(base_url,
+                   '/data/indicators/',my_indicator,
+                   '/locations/',my_location,
+                   '/start/',my_startyr,
+                   '/end/',my_endyr,
+                   '/?format=csv')
+  
+  px <- 
+    read.csv(target, sep='|', skip=1) %>% 
+    filter(Variant %in% variant) %>% 
+    filter(Sex == "Female") %>% 
+    mutate(px = 1- Value) %>% 
+    select(Location, Time = TimeLabel, age = AgeStart, px)
+  
+  # ASFR
+  
+  print(paste0("Getting fertility data for ", paste(countries, collapse = ", ")))
+  
+  my_indicator <- asfr_code
+  
+  target <- paste0(base_url,
+                   '/data/indicators/',my_indicator,
+                   '/locations/',my_location,
+                   '/start/',my_startyr,
+                   '/end/',my_endyr,
+                   '/?format=csv')
+  
+  asfr <- 
+    read.csv(target, sep='|', skip=1) %>% 
+    filter(Variant %in% variant) %>% 
+    select(Location, Time = TimeLabel, age = AgeStart, ASFR = Value)
+  
+  data <- 
+    px %>% 
+    left_join(asfr, by = c("Location", "Time", "age")) %>% 
+    mutate(ASFR = replace(ASFR,is.na(ASFR),0)) 
+  
+  data
+}
+
+# function to get average number of grandchildren for a given country for 2022
+get_num_granchildren_in_2022 <- function(country, res){
+  
+  # Year range
+  
+  my_startyr   <- 1950
+  my_endyr     <- 2022
+  
+  data <- get_UNWPP_inputs_DemoKin(
+    countries = country
+    , my_startyr = my_startyr
+    , my_endyr = my_endyr
+  )
+  
+  U <-
+    data %>%
+    select(Time, age, px) %>%
+    pivot_wider(names_from = Time, values_from = px) %>%
+    select(-age) %>% 
+    as.matrix()
+  
+  f <- data %>%
+    select(Time, age, ASFR) %>%
+    mutate(ASFR = ASFR/1000) %>% 
+    pivot_wider(names_from = Time, values_from = ASFR) %>%
+    select(-age) %>% 
+    as.matrix()
+  
+  # Run kinship models only for granddaughters
+  k <- kin(U, f, time_invariant = FALSE, output_kin = c("gd"), output_period = 2022)
+  
+  # Keep grandparents aged x
+  gp_age <- floor(as.numeric(res$mean_grandparent_age[res$country %in% country]))
+
+  k$kin_summary %>% 
+    filter(age_focal %in% gp_age) %>% 
+    # Kinship models are female and matrilineal, so we approximate both-sex 
+    # grandchildren by multiplying by 4
+    mutate(count_living = round(count_living*4, 1)) %>% 
+    pull(count_living) %>% 
+    paste0("An average grandparent in ", country, " has ", ., " grandchildren.")
+  
+}
+
+# Try it out:
+
+get_num_granchildren_in_2022(country = "Senegal", res = res)
+# [1] "An average grandparent in Senegal has 8.1 grandchildren."
+
+get_num_granchildren_in_2022(country = "Mexico", res = res)
+# [1] "An average grandparent in Mexico has 4.9 grandchildren."
+
+get_num_granchildren_in_2022(country = "Sweden", res = res)
+# [1] "An average grandparent in Sweden has 3.2 grandchildren."
