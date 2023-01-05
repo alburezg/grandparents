@@ -1,3 +1,5 @@
+# 1. Plots ------
+
 # This script analyses and presents the data collected visually
 
 # Load packages and data
@@ -39,6 +41,8 @@ colnames(res) <- c('country', 'mean_grandparent_age')
 
 tail(res[order(res$mean_grandparent_age), ])
 head(res[order(res$mean_grandparent_age), ])
+
+# 2. Average number of grandchildren -------
 
 # "A typical Mexican grandparent has only xx grandkids."
 
@@ -165,23 +169,29 @@ get_num_granchildren_in_2022 <- function(country, res){
   # Keep grandparents aged x
   gp_age <- floor(as.numeric(res$mean_grandparent_age[res$country %in% country]))
 
-  k$kin_summary %>% 
+  df <- 
+    k$kin_summary %>% 
     filter(age_focal %in% gp_age) %>% 
-    # Kinship models are female and matrilineal, so we approximate both-sex 
-    # grandchildren by multiplying by 4
-    mutate(count_living = round(count_living*4, 1)) %>% 
-    pull(count_living) %>% 
-    paste0("An average grandparent in ", country, " has ", ., " grandchildren.")
+    mutate(
+      # Kinship models are female and matrilineal, so we approximate both-sex 
+      # grandchildren by multiplying by 4
+      num_gc = round(count_living*4, 1)
+      , age_diff = round(age_focal - mean_age, 0)
+      , country = country
+      ) %>% 
+    select(country, `Number of grandchildren` = num_gc, `Age difference` = age_diff)
+  
+  df
+  
+    # paste0("An average grandparent in ", country, " has ", df$num_gc, " grandchildren.")
+    # paste0("Grandparents are about ", df$age_diff, " years older than their grandkids.")
   
 }
 
 # Try it out:
 
 get_num_granchildren_in_2022(country = "Senegal", res = res)
-# [1] "An average grandparent in Senegal has 8.1 grandchildren."
 
 get_num_granchildren_in_2022(country = "Mexico", res = res)
-# [1] "An average grandparent in Mexico has 4.9 grandchildren."
 
 get_num_granchildren_in_2022(country = "Sweden", res = res)
-# [1] "An average grandparent in Sweden has 3.2 grandchildren."
