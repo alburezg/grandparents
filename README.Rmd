@@ -8,7 +8,6 @@ output:
     toc_depth: 1
 ---
 
-Replication material for article [The age of the grandparent has arrived](https://www.economist.com/international/2023/01/12/the-age-of-the-grandparent-has-arrived), pusblished in The Economist on 12 Jan, 2023.
 
 ---------------------------------
 ***Code by***
@@ -26,6 +25,8 @@ alburezgutierrez[at]demogr.mpg.de
 https://www.twitter.com/d_alburez
 
 ---------------------------------
+
+**Replication material for article [The age of the grandparent has arrived](https://www.economist.com/international/2023/01/12/the-age-of-the-grandparent-has-arrived), published in *The Economist* on 12 Jan, 2023.**
 
 These are back-of-the-envelope estimates to answer the question: 'how many grandparents are there in the world'? I do this by relying on a series of country-level synthetic population microdata with a genealogical structure produced using the SOCSIM software (https://lab.demog.berkeley.edu/socsim/). The synthetic microdata come from the paper:
 

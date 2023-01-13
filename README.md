@@ -12,10 +12,6 @@ Dec 07 2022
   id="toc-3-replicate-for-all-countries">3. Replicate for all
   countries</a>
 
-Replication material for article [The age of the grandparent has
-arrived](https://www.economist.com/international/2023/01/12/the-age-of-the-grandparent-has-arrived),
-pusblished in The Economist on 12 Jan, 2023.
-
 |                                                                         |
 |:------------------------------------------------------------------------|
 | ***Code by***                                                           |
@@ -25,6 +21,10 @@ pusblished in The Economist on 12 Jan, 2023.
 | <https://www.demogr.mpg.de/en/research_6120/kinship_inequalities_10703> |
 | alburezgutierrez\[at\]demogr.mpg.de                                     |
 | <https://www.twitter.com/d_alburez>                                     |
+
+**Replication material for article [The age of the grandparent has
+arrived](https://www.economist.com/international/2023/01/12/the-age-of-the-grandparent-has-arrived),
+published in *The Economist* on 12 Jan, 2023.**
 
 These are back-of-the-envelope estimates to answer the question: ‘how
 many grandparents are there in the world’? I do this by relying on a
