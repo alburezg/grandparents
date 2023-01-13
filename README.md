@@ -2,13 +2,22 @@ How many grandparents are there in the world?
 ================
 Dec 07 2022
 
-  - [1. Load packages and functions](#1-load-packages-and-functions)
-  - [2. Example for one country: grandparents in
-    Guatemala](#2-example-for-one-country-grandparents-in-guatemala)
-  - [3. Replicate for all countries](#3-replicate-for-all-countries)
+- <a href="#1-load-packages-and-functions"
+  id="toc-1-load-packages-and-functions">1. Load packages and
+  functions</a>
+- <a href="#2-example-for-one-country-grandparents-in-guatemala"
+  id="toc-2-example-for-one-country-grandparents-in-guatemala">2. Example
+  for one country: grandparents in Guatemala</a>
+- <a href="#3-replicate-for-all-countries"
+  id="toc-3-replicate-for-all-countries">3. Replicate for all
+  countries</a>
+
+Replication material for article [The age of the grandparent has
+arrived](https://www.economist.com/international/2023/01/12/the-age-of-the-grandparent-has-arrived),
+pusblished in The Economist on 12 Jan, 2023.
 
 |                                                                         |
-| :---------------------------------------------------------------------- |
+|:------------------------------------------------------------------------|
 | ***Code by***                                                           |
 | Diego Alburez-Gutierrez, PhD                                            |
 | Kinship Inequalities Research Group,                                    |
@@ -42,7 +51,7 @@ The scripts access these data using the Harvard Dataverse API, so you
 need a connection to the internet to replicate this code. The code runs
 in R, preferably in RStudio.
 
-# 1\. Load packages and functions
+# 1. Load packages and functions
 
 ## 1.1. Packages
 
@@ -59,12 +68,6 @@ library(knitr)
 Define a number of functions for getting data, re-arranging simulation
 data, and doing the analysis.
 
-<details>
-
-<summary><b>SHOW CODE</b></summary>
-
-<p>
-
 ``` r
 # a function to convert socsim months to calendar years
 asYr2 <- function(x, FinalSimYear, endmo) {
@@ -78,7 +81,7 @@ list_data <- function(){
   # 1. Get links to download simulation data from Harvard Dataverse 
   # https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/SSZL6U
   
-  # Get list of files from Datavsers
+  # Get list of files from Dataverse
   api_call <- "https://dataverse.harvard.edu/api/datasets/:persistentId?persistentId=doi:10.7910/DVN/SSZL6U"
   
   res <- GET(api_call)
@@ -102,7 +105,7 @@ list_data <- function(){
 find_grandparents <- function(countries, year, data_df, export = T){
   
   # Avoid unnecessary calculations by NOT running again analysis for countries
-  # that alrady have a saved csv file
+  # that already have a saved csv file
   if(export){
     f <- list.files("Output", pattern = "gp_")
     f <- gsub("gp_|.csv", "", f)
@@ -132,7 +135,6 @@ find_grandparents <- function(countries, year, data_df, export = T){
     data.frame()
   
   # Get data
-  
   print("Start estimations from microdata...")
   
   gp <- find_grandparents2(urls, year, export)
@@ -176,7 +178,7 @@ find_grandparents2 <- function(urls, year, export){
       out[is.na(out)] <- 0
       
       if(export){
-        print("Writing grandparent estiamtes to Output.")
+        print("Writing grandparent estimates to Output.")
         write.csv(out, paste0("Output/gp_", lab, ".csv"))
       } else {
         return(out)
@@ -214,10 +216,10 @@ find_grandparents3 <- function(opop, year){
     gp_mm <- opop$mom[match(opop$mom[match_rows], opop$pid)]
     gp_mp <- opop$mom[match(opop$pop[match_rows], opop$pid)]
     
-    # ID of all grandparrents, doesn't matter if they're alive
+    # ID of all grandparents, doesn't matter if they're alive
     gp <- unique(c(gp_pp, gp_pm, gp_mm, gp_mp))
     
-    # ID of living grandpanrents in year 'year'
+    # ID of living grandparents in year 'year'
     gp_alive <- gp[gp %in% egos]
     
     # Get number of grandpas by age
@@ -250,14 +252,12 @@ get_unwpp_pop <- function(countries,  my_startyr = 2022, my_endyr = 2022){
   base_url <- 'https://population.un.org/dataportalapi/api/v1'
   
   # First, identify which indicator codes we want to use
-  
   target <- paste0(base_url,'/indicators/?format=csv')
   codes <- read.csv(target, sep='|', skip=1) 
   
   pop_code <- codes$Id[codes$ShortName == "PopByAge1AndSex"]
   
   # Get location codes
-  
   target <- paste0(base_url, '/locations?sort=id&format=csv')
   df_locations <- read.csv(target, sep='|', skip=1)
   
@@ -334,11 +334,7 @@ get_unwpp_pop <- function(countries,  my_startyr = 2022, my_endyr = 2022){
 }
 ```
 
-</p>
-
-</details>
-
-# 2\. Example for one country: grandparents in Guatemala
+# 2. Example for one country: grandparents in Guatemala
 
 First, show how the estimation works for Guatemala as an example. Later
 on, I’ll scale this up for all world countries.
@@ -356,7 +352,7 @@ years <- 2022
 # Don't touch this
 get_un_pop_from_api <- T
 
-# To convert months to yeares in SOCSIM
+# To convert months to years in SOCSIM
 FinalSimYear <-  2200
 endmo <-  5400
 ```
@@ -373,7 +369,7 @@ data_df <- list_data()
 ``` r
 all_countries <- unique(data_df$country)
 
-# Get country iso codes
+# Get country iso3c codes
 iso3_codes <- countrycode(countries, origin = "country.name", destination = "iso3c")
 ```
 
@@ -418,7 +414,6 @@ pop_un <-
     select(-country, -sex)
 
 # Combine simulation estimates and UN population numbers to get estimated number of grandparents
-
 pop_gp_by_age <- 
   gps %>% 
   left_join(pop_un, by = c("iso3", "year", "age")) %>% 
@@ -432,7 +427,6 @@ population aged `x` who are grandparents).
 
 ``` r
 # Distribution of grandparents over age 
-
 pop_gp_by_age %>%
   rename(`Grandparents per capita` = share_grandparents, `Number of grandparents` = number_grandparents) %>% 
   select(-pop_un) %>% 
@@ -468,14 +462,14 @@ Guatemala in 2022, irrespective of how old the are?
   kable()
 ```
 
-    ## `summarise()` has grouped output by 'iso3'. You can override using the `.groups`
-    ## argument.
+    ## `summarise()` has grouped output by 'iso3'. You can override using the
+    ## `.groups` argument.
 
 | iso3 | year | Number of grandparents (millions) | Total population (millions) | Grandparents per capita |
-| :--- | ---: | --------------------------------: | --------------------------: | ----------------------: |
+|:-----|-----:|----------------------------------:|----------------------------:|------------------------:|
 | GTM  | 2022 |                               2.9 |                        17.8 |               0.1615601 |
 
-# 3\. Replicate for all countries
+# 3. Replicate for all countries
 
 We do the same thing, but scaling it up to all countries present in the
 UNWPP data (<https://population.un.org/wpp/>).
@@ -489,24 +483,23 @@ and for all ages combined) and for the entire world. Estimates for
 2025-2040 come from UNWPP projections (medium scenario).
 
 ``` r
-# 1. Preamble
-
+# 1. Preamble -----------
 countries <- c("all")
 # How many simulations per country? max 5
 # Don't touch this
 num_sims <- 1
 
-years <- seq(1990, 2040, 5)
+years <- sort(c(seq(1960, 2050, 5), 2022))
 
 # Don't touch this
 get_un_pop_from_api <- F
 
-# To convert months to yeares in SOCSIM
+# To convert months to years in SOCSIM
 # 20200414 This should work for new estimates up to 2200
 FinalSimYear <-  2200
 endmo <-  5400
 
-# 2. Locate grandparents in simulaions -----------
+# 2. Locate grandparents in simulations -----------
 
 data_df <- list_data()
 all_countries <- unique(data_df$country)
@@ -528,7 +521,6 @@ iso3_codes <- countrycode(countries, origin = "country.name", destination = "iso
 find_grandparents(countries, years, data_df, export = T)
 
 # Read gp data from disk
-
 f <- list.files("Output", pattern = "gp_", full.names = T)
 
 gps <- 
@@ -632,40 +624,45 @@ write.csv(pop_gp_world, "Output/grandparents_world.csv", row.names = F)
 sessionInfo()
 ```
 
-    ## R version 4.0.2 (2020-06-22)
+    ## R version 4.2.1 (2022-06-23 ucrt)
     ## Platform: x86_64-w64-mingw32/x64 (64-bit)
     ## Running under: Windows 10 x64 (build 19044)
     ## 
     ## Matrix products: default
     ## 
     ## locale:
-    ## [1] LC_COLLATE=English_United Kingdom.1252 
-    ## [2] LC_CTYPE=English_United Kingdom.1252   
-    ## [3] LC_MONETARY=English_United Kingdom.1252
+    ## [1] LC_COLLATE=English_United Kingdom.utf8 
+    ## [2] LC_CTYPE=English_United Kingdom.utf8   
+    ## [3] LC_MONETARY=English_United Kingdom.utf8
     ## [4] LC_NUMERIC=C                           
-    ## [5] LC_TIME=English_United Kingdom.1252    
+    ## [5] LC_TIME=English_United Kingdom.utf8    
     ## 
     ## attached base packages:
     ## [1] stats     graphics  grDevices utils     datasets  methods   base     
     ## 
     ## other attached packages:
-    ##  [1] knitr_1.31        data.table_1.14.0 countrycode_1.2.0 httr_1.4.2       
-    ##  [5] forcats_0.5.1     stringr_1.4.0     dplyr_1.0.5       purrr_0.3.4      
-    ##  [9] readr_1.4.0       tidyr_1.1.3       tibble_3.1.0      ggplot2_3.3.3    
-    ## [13] tidyverse_1.3.0  
+    ##  [1] knitr_1.41        data.table_1.14.6 countrycode_1.4.0 httr_1.4.4       
+    ##  [5] forcats_0.5.2     stringr_1.5.0     dplyr_1.0.10      purrr_1.0.0      
+    ##  [9] readr_2.1.3       tidyr_1.2.1       tibble_3.1.8      ggplot2_3.4.0    
+    ## [13] tidyverse_1.3.2  
     ## 
     ## loaded via a namespace (and not attached):
-    ##  [1] tidyselect_1.1.0 xfun_0.21        haven_2.3.1      colorspace_2.0-0
-    ##  [5] vctrs_0.4.1      generics_0.1.0   htmltools_0.5.2  yaml_2.2.1      
-    ##  [9] utf8_1.2.1       rlang_1.0.2      pillar_1.5.1     withr_2.5.0     
-    ## [13] glue_1.6.2       DBI_1.1.1        dbplyr_2.1.0     modelr_0.1.8    
-    ## [17] readxl_1.3.1     lifecycle_1.0.0  munsell_0.5.0    gtable_0.3.0    
-    ## [21] cellranger_1.1.0 rvest_1.0.0      evaluate_0.17    labeling_0.4.2  
-    ## [25] fastmap_1.1.0    curl_4.3         fansi_0.4.2      highr_0.8       
-    ## [29] broom_0.7.5      Rcpp_1.0.7       backports_1.2.1  scales_1.1.1    
-    ## [33] jsonlite_1.7.2   farver_2.1.0     fs_1.5.0         hms_1.0.0       
-    ## [37] digest_0.6.28    stringi_1.5.3    grid_4.0.2       cli_3.2.0       
-    ## [41] tools_4.0.2      magrittr_2.0.1   crayon_1.4.1     pkgconfig_2.0.3 
-    ## [45] ellipsis_0.3.2   xml2_1.3.2       reprex_1.0.0     lubridate_1.7.10
-    ## [49] assertthat_0.2.1 rmarkdown_2.7    rstudioapi_0.13  R6_2.5.0        
-    ## [53] compiler_4.0.2
+    ##  [1] lubridate_1.9.0     assertthat_0.2.1    digest_0.6.31      
+    ##  [4] utf8_1.2.2          R6_2.5.1            cellranger_1.1.0   
+    ##  [7] backports_1.4.1     reprex_2.0.2        evaluate_0.19      
+    ## [10] highr_0.10          pillar_1.8.1        rlang_1.0.6        
+    ## [13] googlesheets4_1.0.1 curl_4.3.3          readxl_1.4.1       
+    ## [16] rstudioapi_0.14     rmarkdown_2.19      labeling_0.4.2     
+    ## [19] googledrive_2.0.0   munsell_0.5.0       broom_1.0.2        
+    ## [22] compiler_4.2.1      modelr_0.1.10       xfun_0.36          
+    ## [25] pkgconfig_2.0.3     htmltools_0.5.4     tidyselect_1.2.0   
+    ## [28] fansi_1.0.3         crayon_1.5.2        tzdb_0.3.0         
+    ## [31] dbplyr_2.2.1        withr_2.5.0         grid_4.2.1         
+    ## [34] jsonlite_1.8.4      gtable_0.3.1        lifecycle_1.0.3    
+    ## [37] DBI_1.1.3           magrittr_2.0.3      scales_1.2.1       
+    ## [40] cli_3.5.0           stringi_1.7.8       farver_2.1.1       
+    ## [43] fs_1.5.2            xml2_1.3.3          ellipsis_0.3.2     
+    ## [46] generics_0.1.3      vctrs_0.5.1         tools_4.2.1        
+    ## [49] glue_1.6.2          hms_1.1.2           fastmap_1.1.0      
+    ## [52] yaml_2.3.6          timechange_0.2.0    colorspace_2.0-3   
+    ## [55] gargle_1.2.1        rvest_1.0.3         haven_2.5.1

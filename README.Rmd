@@ -8,6 +8,8 @@ output:
     toc_depth: 1
 ---
 
+Replication material for article [The age of the grandparent has arrived](https://www.economist.com/international/2023/01/12/the-age-of-the-grandparent-has-arrived), pusblished in The Economist on 12 Jan, 2023.
+
 ---------------------------------
 ***Code by***
 
@@ -50,9 +52,6 @@ library(knitr)
 ## 1.2. Functions
 
 Define a number of functions for getting data, re-arranging simulation data, and doing the analysis.
-
-<details><summary><b>SHOW CODE</b></summary>
-<p>
 
 ```{r}
 # a function to convert socsim months to calendar years
@@ -319,9 +318,6 @@ get_unwpp_pop <- function(countries,  my_startyr = 2022, my_endyr = 2022){
   
 }
 ```
-
-</p>
-</details>
 
 # 2. Example for one country: grandparents in Guatemala
 
